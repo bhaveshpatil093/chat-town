@@ -26,6 +26,7 @@ The repository currently contains the TypeScript scaffold and development toolin
 - `package.json` and `package-lock.json` — scripts and dependency manifest/lockfile.
 - `.env.example` — documented environment variable defaults; copy to `.env` for local configuration.
 - `src/config.ts` — validated application configuration.
+- `src/twitchAuth.ts` and `src/twitchAuthCli.ts` — Twitch token loading, refreshing, and local OAuth login.
 - `.npmrc` — npm's peer-dependency setting for reproducible installs with the current npm resolver.
 - `tsconfig.json` — TypeScript compiler settings.
 - `eslint.config.js` — ESLint configuration.
@@ -41,6 +42,7 @@ Keep future server, browser-client, and persistence code organized under `src/` 
 - `npm start` — run the compiled app.
 - `npm test` — run the Vitest unit test suite.
 - `npm run sim` — post fake events to the running server; accept `--type` and event-specific options such as `--viewers`.
+- `npm run twitch:login` — open Twitch OAuth locally and save a refreshable user token to the ignored `data/twitch-token.json` file.
 - `npm run lint` — lint the project with ESLint.
 - `npm run format` — format files with Prettier.
 - `npm run format:check` — check formatting without changing files.

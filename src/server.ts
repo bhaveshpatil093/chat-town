@@ -8,6 +8,7 @@ import { createChatCommandHandler } from "./chatCommands.js";
 import { sanitizeChatMessage } from "./chatSanitizer.js";
 import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
+import { initializeTwitchAuth } from "./twitchAuth.js";
 
 export const DEFAULT_PORT = config.port;
 export const eventBus = new EventBus();
@@ -99,6 +100,7 @@ export function startChatTownServer(
   const server = createChatTownServer(bus);
   server.httpServer.listen(port, () => {
     console.log(`Chat Town server listening on port ${port}`);
+    void initializeTwitchAuth();
   });
   return server;
 }
