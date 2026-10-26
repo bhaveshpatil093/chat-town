@@ -81,6 +81,43 @@ describe("Chat Town server", () => {
       expect(JSON.parse(payload.toString())).toEqual(event);
     }
   });
+
+  it("generates and broadcasts events through the simulation route", async () => {
+    const bus = new EventBus();
+    chatTownServer = createChatTownServer(bus);
+    await listen(chatTownServer);
+
+    const client = new WebSocket(webSocketUrl(chatTownServer));
+    await once(client, "open");
+    const messageReceived = once(client, "message");
+    const response = await fetch(`${serverUrl(chatTownServer)}api/sim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "raid", viewers: 40 }),
+    });
+    const { events } = (await response.json()) as {
+      events: ChatTownEvent[];
+    };
+    const [payload] = await messageReceived;
+
+    expect(response.status).toBe(200);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ type: "raid", viewerCount: 40 });
+    expect(JSON.parse(payload.toString())).toEqual(events[0]);
+  });
+
+  it("rejects invalid simulation requests", async () => {
+    chatTownServer = createChatTownServer();
+    await listen(chatTownServer);
+
+    const response = await fetch(`${serverUrl(chatTownServer)}api/sim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ type: "raid", viewers: -1 }),
+    });
+
+    expect(response.status).toBe(400);
+  });
 });
 
 async function listen(chatTownServer: ChatTownServer): Promise<void> {

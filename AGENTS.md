@@ -37,7 +37,7 @@ Keep future server, browser-client, and persistence code organized under `src/` 
 - `npm run build` — compile `src/` into `dist/`.
 - `npm start` — run the compiled app.
 - `npm test` — run the Vitest unit test suite.
-- `npm run sim` — run the simulation entry point.
+- `npm run sim` — post fake events to the running server; accept `--type` and event-specific options such as `--viewers`.
 - `npm run lint` — lint the project with ESLint.
 - `npm run format` — format files with Prettier.
 - `npm run format:check` — check formatting without changing files.

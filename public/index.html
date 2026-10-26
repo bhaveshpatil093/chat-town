@@ -8,7 +8,50 @@
   <body>
     <main>
       <h1>Chat Town</h1>
-      <p>The server is running.</p>
+      <p>The server is running. Generate fake events to test the live feed.</p>
+      <form id="sim-form">
+        <label for="event-type">Event type</label>
+        <select id="event-type" name="type">
+          <option value="all">All event types</option>
+          <option value="chat">Chat</option>
+          <option value="follow">Follow</option>
+          <option value="sub">Subscription</option>
+          <option value="bits">Bits</option>
+          <option value="raid">Raid</option>
+          <option value="levelup">Level up</option>
+        </select>
+        <label for="viewers">Raid viewers</label>
+        <input id="viewers" name="viewers" type="number" min="1" value="40" />
+        <button type="submit">Send fake event</button>
+      </form>
+      <pre id="result" aria-live="polite"></pre>
     </main>
+    <script type="module">
+      const form = document.querySelector("#sim-form");
+      const result = document.querySelector("#result");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const formData = new FormData(form);
+        const payload = { type: formData.get("type") };
+        if (payload.type === "raid") {
+          payload.viewers = Number(formData.get("viewers"));
+        }
+
+        result.textContent = "Sending…";
+        try {
+          const response = await fetch("/api/sim", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error ?? response.statusText);
+          result.textContent = JSON.stringify(data.events, null, 2);
+        } catch (error) {
+          result.textContent = error.message;
+        }
+      });
+    </script>
   </body>
 </html>

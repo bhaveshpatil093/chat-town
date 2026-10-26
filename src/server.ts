@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import express, { type Express } from "express";
 import WebSocket, { WebSocketServer } from "ws";
 import { CHAT_TOWN_EVENT_TYPES, EventBus, type ChatTownEvent } from "./bus.js";
+import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 
 export const DEFAULT_PORT = 3000;
 export const eventBus = new EventBus();
@@ -23,6 +24,23 @@ export function createChatTownServer(
   publicDirectory = PUBLIC_DIRECTORY,
 ): ChatTownServer {
   const app = express();
+  app.use(express.json());
+
+  app.post("/api/sim", (request, response) => {
+    const simulation = parseSimulationRequest(request.body);
+    if (!simulation) {
+      response.status(400).json({
+        error:
+          "Expected a valid event type and an optional positive viewer count.",
+      });
+      return;
+    }
+
+    const events = generateFakeEvents(simulation);
+    for (const event of events) bus.emit(event);
+    response.status(200).json({ events });
+  });
+
   app.use(express.static(publicDirectory));
 
   const httpServer = createHttpServer(app);
