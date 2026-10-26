@@ -821,6 +821,7 @@
           fadeElapsed: 0,
           action: null,
           actionElapsed: 0,
+          actionDurationMs: 2_000,
         });
         sprite.alpha = 1;
         sprite.visible = true;
@@ -1223,7 +1224,10 @@
       function updateCharacterAction(character, deltaMs) {
         if (!character.action) return;
         character.actionElapsed += deltaMs;
-        const progress = Math.min(character.actionElapsed / 2_000, 1);
+        const progress = Math.min(
+          character.actionElapsed / character.actionDurationMs,
+          1,
+        );
         const { graphics, action } = character;
         if (action === "jump") {
           const lift = Math.sin(progress * Math.PI) * character.tileSize * 0.48;
@@ -1238,9 +1242,10 @@
         if (action === "wave") {
           graphics.rotation = Math.sin(character.actionElapsed / 220) * 0.07;
         }
-        if (character.actionElapsed >= 2_000) {
+        if (character.actionElapsed >= character.actionDurationMs) {
           character.action = null;
           character.actionElapsed = 0;
+          character.actionDurationMs = 2_000;
           graphics.y = 0;
           graphics.rotation = 0;
           graphics.scale.set(1);
@@ -1377,8 +1382,17 @@
           ((app.screen.width + tileWidth * 2) /
             (tileWidth * RAID_PARADE_TIMELINE.marchSpeedTilesPerSecond)) *
           1000;
+        const paradeStartDelay =
+          RAID_PARADE_TIMELINE.bannerEnterMs +
+          RAID_PARADE_TIMELINE.marcherDelayMs;
+        const wavingCharacters = [...characters.values()].filter(
+          (character) =>
+            character.state !== "parading" &&
+            character.state !== "dispersing" &&
+            character.state !== "despawning",
+        );
         const label = new Text({
-          text: `${event.displayName} is raiding with ${event.viewerCount} viewers!`,
+          text: `Welcome, raiders from ${event.displayName}!\n${event.viewerCount} viewers are joining the town`,
           style: {
             fontFamily: "Arial, sans-serif",
             fontSize: Math.max(18, Math.min(32, app.screen.width / 48)),
@@ -1429,6 +1443,7 @@
           character.sprite.position.set(character.baseX, character.baseY);
           character.sprite.zIndex = character.baseY;
           character.direction = "right";
+          character.marchSpeed = 0.9 + (hashUsername(identity) % 1000) / 5000;
           character.state = "parading";
           character.nameLabel.visible = false;
           depthLayer.addChild(character.sprite);
@@ -1436,20 +1451,71 @@
           raiders.push(character);
         }
 
+        const lastMarcherDuration = raiders.reduce(
+          (longest, character, index) =>
+            Math.max(
+              longest,
+              index * RAID_PARADE_TIMELINE.marcherStaggerMs +
+                marchMs / character.marchSpeed,
+            ),
+          0,
+        );
+        const paradeDuration =
+          paradeStartDelay +
+          lastMarcherDuration +
+          RAID_PARADE_TIMELINE.disperseMs;
+        for (const character of wavingCharacters) {
+          if (character.state === "walking" && character.target) {
+            reservedTiles.delete(character.target.key);
+            character.target = null;
+          }
+          character.state = "pause";
+          character.stateTimer = paradeDuration + 200;
+          character.direction =
+            character.baseX < app.screen.width / 2 ? "right" : "left";
+          character.animationFrame = 0;
+          character.graphics.y = 0;
+          character.graphics.rotation = 0;
+          character.graphics.scale.set(1);
+          character.action = "wave";
+          character.actionElapsed = 0;
+          character.actionDurationMs = paradeDuration + 100;
+          renderCharacter(character);
+        }
+
+        const confetti = Array.from(
+          { length: Math.min(100, 16 + count) },
+          () => ({
+            x: Math.random() * app.screen.width,
+            y: Math.random() * app.screen.height,
+            speed: randomBetween(35, 95),
+            drift: randomBetween(-22, 22),
+            size: randomBetween(3, 7),
+            color: choose(
+              ["#f4d36b", "#e98973", "#a4d17b", "#8fc4dc"],
+              Math.random,
+            ),
+            phase: Math.random() * Math.PI * 2,
+          }),
+        );
+        const dustGraphics = new Graphics();
+        dustGraphics.zIndex = tileHeight * 4 - 1;
+        depthLayer.addChild(dustGraphics);
+        const confettiGraphics = new Graphics();
+        effectLayer.addChild(confettiGraphics);
+        effectLayer.addChild(banner);
+
         activeEffect = {
           type: "raid",
           elapsed: 0,
-          duration:
-            RAID_PARADE_TIMELINE.bannerEnterMs +
-            RAID_PARADE_TIMELINE.marcherDelayMs +
-            Math.max(0, count - 1) * RAID_PARADE_TIMELINE.marcherStaggerMs +
-            marchMs +
-            RAID_PARADE_TIMELINE.disperseMs,
+          duration: paradeDuration,
           banner,
           bannerWidth: background.width,
-          bannerHeight: background.height,
           marchMs,
           raiders,
+          confetti,
+          confettiGraphics,
+          dustGraphics,
           tileWidth,
           tileHeight,
         };
@@ -1470,9 +1536,15 @@
           RAID_PARADE_TIMELINE.marcherDelayMs;
         const marchComplete =
           marcherStart +
-          Math.max(0, parade.raiders.length - 1) *
-            RAID_PARADE_TIMELINE.marcherStaggerMs +
-          parade.marchMs;
+          parade.raiders.reduce(
+            (longest, character, index) =>
+              Math.max(
+                longest,
+                index * RAID_PARADE_TIMELINE.marcherStaggerMs +
+                  parade.marchMs / character.marchSpeed,
+              ),
+            0,
+          );
         if (parade.elapsed >= marchComplete) {
           if (!parade.dispersed) {
             disperseRaiders(parade);
@@ -1496,7 +1568,8 @@
           const progress = Math.min(localElapsed / parade.marchMs, 1);
           character.sprite.x =
             -parade.tileWidth +
-            (app.screen.width + parade.tileWidth * 2) * progress;
+            (app.screen.width + parade.tileWidth * 2) *
+              Math.min(progress * character.marchSpeed, 1);
           character.sprite.y = character.baseY;
           character.sprite.zIndex = character.sprite.y;
           const frame = Math.floor(localElapsed / 150) % 2;
@@ -1504,6 +1577,56 @@
             character.animationFrame = frame;
             renderCharacter(character);
           }
+        }
+        drawRaidDust(parade, marcherStart);
+        drawRaidConfetti(parade);
+      }
+
+      function drawRaidDust(parade, marcherStart) {
+        parade.dustGraphics.clear();
+        for (let index = 0; index < parade.raiders.length; index += 1) {
+          const character = parade.raiders[index];
+          const localElapsed =
+            parade.elapsed -
+            marcherStart -
+            index * RAID_PARADE_TIMELINE.marcherStaggerMs;
+          if (character.state !== "parading" || localElapsed < 0) continue;
+          const phase = (localElapsed % 360) / 360;
+          if (phase > 0.72) continue;
+          const radius = parade.tileHeight * (0.055 + phase * 0.09);
+          const alpha = 0.2 * (1 - phase / 0.72);
+          const x =
+            character.sprite.x - parade.tileWidth * (0.12 + phase * 0.45);
+          const y = character.baseY - 2;
+          parade.dustGraphics
+            .ellipse(x, y, radius * 1.5, radius)
+            .fill({ color: "#e8d4ad", alpha: alpha * 0.35 });
+          parade.dustGraphics
+            .circle(x, y, radius * 0.45)
+            .fill({ color: "#fff0d1", alpha: alpha * 0.55 });
+        }
+      }
+
+      function drawRaidConfetti(parade) {
+        parade.confettiGraphics.clear();
+        const fallElapsed = Math.max(
+          0,
+          parade.elapsed - RAID_PARADE_TIMELINE.bannerEnterMs,
+        );
+        if (fallElapsed <= 0) return;
+        for (const particle of parade.confetti) {
+          const y =
+            ((particle.y + (fallElapsed * particle.speed) / 1000) %
+              (app.screen.height + 24)) -
+            12;
+          const x =
+            (particle.x +
+              Math.sin(fallElapsed / 520 + particle.phase) * particle.drift +
+              app.screen.width) %
+            app.screen.width;
+          parade.confettiGraphics
+            .rect(x, y, particle.size, particle.size * 0.65)
+            .fill({ color: particle.color, alpha: 0.52 });
         }
       }
 
@@ -1763,6 +1886,10 @@
         if (activeEffect.type === "raid") {
           effectLayer.removeChild(activeEffect.banner);
           activeEffect.banner.destroy({ children: true });
+          effectLayer.removeChild(activeEffect.confettiGraphics);
+          activeEffect.confettiGraphics.destroy();
+          depthLayer.removeChild(activeEffect.dustGraphics);
+          activeEffect.dustGraphics.destroy();
           activeEffect = null;
           return;
         }

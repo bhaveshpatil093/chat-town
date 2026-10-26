@@ -161,6 +161,54 @@
       .raid-row input {
         max-width: 180px;
       }
+      .raid-preview {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+        border: 1px solid #405448;
+        border-radius: 12px;
+        padding: 16px;
+        background: #111a15;
+      }
+      .raid-preview strong {
+        display: block;
+        color: #f4d36b;
+      }
+      .raid-preview p {
+        margin: 6px 0 0;
+        color: #b4c2b5;
+        font-size: 0.85rem;
+      }
+      .preview-marchers {
+        display: flex;
+        align-items: end;
+        gap: 4px;
+        min-width: 70px;
+      }
+      .preview-marchers span {
+        width: 8px;
+        height: 17px;
+        border: 2px solid #18241b;
+        border-radius: 3px 3px 1px 1px;
+        background: #e36c5b;
+        box-shadow: 0 -5px 0 -1px #e3bd8a;
+      }
+      .preview-marchers span:nth-child(2n) {
+        height: 21px;
+        background: #75a8c4;
+        box-shadow: 0 -5px 0 -1px #9b674b;
+      }
+      .preview-marchers span:nth-child(3n) {
+        background: #d6b74e;
+        box-shadow: 0 -5px 0 -1px #e9c59c;
+      }
+      @media (max-width: 420px) {
+        .raid-preview {
+          grid-template-columns: 1fr;
+        }
+      }
       #status {
         min-height: 1.4em;
         margin: 18px 0 0;
@@ -285,6 +333,16 @@
               value="40"
             />
           </div>
+          <div class="field">
+            <label for="raid-channel">Raid channel name</label>
+            <input
+              id="raid-channel"
+              name="raid-channel"
+              value="RaidTown"
+              maxlength="25"
+              autocomplete="off"
+            />
+          </div>
           <div class="field message">
             <label for="message">Chat message</label>
             <textarea id="message" name="message" maxlength="500">
@@ -299,6 +357,21 @@ Hello, town!</textarea>
           <button type="button" data-type="bits">Bits</button>
           <button type="button" data-type="raid">Raid</button>
           <button type="button" data-type="levelup">Level up</button>
+        </div>
+        <div class="raid-preview" aria-live="polite">
+          <div>
+            <strong id="raid-preview-title"
+              >Welcome, raiders from RaidTown!</strong
+            >
+            <p>
+              <span id="raid-preview-count">40</span> viewers · up to 60
+              marchers
+            </p>
+          </div>
+          <div class="preview-marchers" aria-hidden="true">
+            <span></span><span></span><span></span><span></span><span></span
+            ><span></span><span></span>
+          </div>
         </div>
         <h2 class="scene-heading">Scene lighting</h2>
         <div class="buttons" aria-label="Set overlay lighting">
@@ -339,6 +412,20 @@ Hello, town!</textarea>
       const buttons = [...document.querySelectorAll("[data-type]")];
       const status = document.querySelector("#status");
       const result = document.querySelector("#result");
+      const raidChannel = document.querySelector("#raid-channel");
+      const raidViewers = document.querySelector("#viewers");
+
+      function updateRaidPreview() {
+        const channel = raidChannel.value.trim() || "Raid channel";
+        const count = Math.max(0, Number(raidViewers.value) || 0);
+        document.querySelector("#raid-preview-title").textContent =
+          `Welcome, raiders from ${channel}!`;
+        document.querySelector("#raid-preview-count").textContent =
+          String(count);
+      }
+
+      raidChannel.addEventListener("input", updateRaidPreview);
+      raidViewers.addEventListener("input", updateRaidPreview);
 
       const stateLabels = {
         disabled: "Simulator-only mode",
@@ -400,7 +487,8 @@ Hello, town!</textarea>
           const payload = { type, username };
           if (type === "chat") payload.message = message;
           if (type === "raid") {
-            payload.viewers = Number(document.querySelector("#viewers").value);
+            payload.username = raidChannel.value.trim() || "Raid channel";
+            payload.viewers = Number(raidViewers.value);
           }
 
           buttons.forEach((item) => (item.disabled = true));
