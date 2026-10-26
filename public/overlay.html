@@ -66,6 +66,42 @@
       });
       app.renderer.background.alpha = 0;
       document.body.appendChild(app.canvas);
+      const debugOverlay = document.createElement("div");
+      debugOverlay.setAttribute("aria-live", "polite");
+      debugOverlay.style.cssText =
+        "position:fixed;top:12px;left:12px;z-index:10;padding:10px 12px;border:1px solid #ffffff38;border-radius:8px;background:#101714e8;color:#edffe8;font:600 13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;pointer-events:none;display:none";
+      document.body.appendChild(debugOverlay);
+      let debugEnabled = false;
+      let debugFrameCount = 0;
+      let debugElapsedMs = 0;
+
+      function toggleDebugOverlay(event) {
+        if (
+          event.repeat ||
+          event.key.toLowerCase() !== "d" ||
+          event.altKey ||
+          event.ctrlKey ||
+          event.metaKey
+        ) {
+          return;
+        }
+        debugEnabled = !debugEnabled;
+        debugOverlay.style.display = debugEnabled ? "block" : "none";
+        if (debugEnabled) updateDebugOverlay(0);
+      }
+
+      window.addEventListener("keydown", toggleDebugOverlay);
+
+      function updateDebugOverlay(elapsedMs) {
+        if (!debugEnabled) return;
+        debugFrameCount += 1;
+        debugElapsedMs += elapsedMs;
+        if (debugElapsedMs < 500) return;
+        const fps = Math.round((debugFrameCount * 1000) / debugElapsedMs);
+        debugOverlay.textContent = `FPS      ${fps}\nCharacters ${characters.size}`;
+        debugFrameCount = 0;
+        debugElapsedMs = 0;
+      }
 
       const townMap = [
         "gggggggggggggggggg",
@@ -763,7 +799,10 @@
         return min + Math.random() * (max - min);
       }
 
-      app.ticker.add((ticker) => updateCharacters(ticker.elapsedMS));
+      app.ticker.add((ticker) => {
+        updateCharacters(ticker.elapsedMS);
+        updateDebugOverlay(ticker.elapsedMS);
+      });
 
       function hashUsername(username) {
         let hash = 2_166_136_261;
