@@ -170,15 +170,21 @@ export async function loadRefreshingAuthProvider(
   return { provider, userId: token.userId };
 }
 
-export async function initializeTwitchAuth(): Promise<void> {
-  if (!existsSync(TWITCH_TOKEN_PATH)) return;
+export async function initializeTwitchAuth(): Promise<{
+  provider: RefreshingAuthProvider;
+  userId: string;
+} | null> {
+  if (!existsSync(TWITCH_TOKEN_PATH)) return null;
   try {
-    const { provider, userId } = await loadRefreshingAuthProvider();
+    const auth = await loadRefreshingAuthProvider();
+    const { provider, userId } = auth;
     runtimeAuthProvider = provider;
     console.info(`[Chat Town] Twitch auth ready for user ${userId}.`);
+    return auth;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     console.error(`[Chat Town] Could not initialize Twitch auth: ${detail}`);
+    return null;
   }
 }
 

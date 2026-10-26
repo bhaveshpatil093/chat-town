@@ -21,11 +21,15 @@ const configSchema = z.object({
     return value;
   }, z.number().int().min(1).max(65_535)),
   CHAT_BLOCKED_WORDS: z.string().optional().default(""),
+  TWITCH_CHANNEL: z.string().trim().optional().default(""),
+  TWITCH_BOT_ACCOUNTS: z.string().optional().default(""),
 });
 
 export interface AppConfig {
   port: number;
   blockedWords: string[];
+  twitchChannel: string | null;
+  twitchBotAccounts: string[];
 }
 
 export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
@@ -45,7 +49,15 @@ export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
   const blockedWords = result.data.CHAT_BLOCKED_WORDS.split(",")
     .map((word) => word.trim())
     .filter(Boolean);
-  return { port: result.data.PORT, blockedWords };
+  const twitchBotAccounts = result.data.TWITCH_BOT_ACCOUNTS.split(",")
+    .map((account) => account.trim().replace(/^@/u, "").toLocaleLowerCase())
+    .filter(Boolean);
+  return {
+    port: result.data.PORT,
+    blockedWords,
+    twitchChannel: result.data.TWITCH_CHANNEL || null,
+    twitchBotAccounts,
+  };
 }
 
 export const config = parseConfig(process.env);

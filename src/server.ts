@@ -9,6 +9,7 @@ import { sanitizeChatMessage } from "./chatSanitizer.js";
 import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 import { initializeTwitchAuth } from "./twitchAuth.js";
+import { startTwitchEventSub } from "./twitch.js";
 
 export const DEFAULT_PORT = config.port;
 export const eventBus = new EventBus();
@@ -59,6 +60,7 @@ export function createChatTownServer(
   };
 
   const removeChatSanitizer = bus.on("chat", (event) => {
+    if (event.blocked) return;
     const sanitized = sanitizeChatMessage(event.message, config.blockedWords);
     event.message = sanitized.message;
     if (sanitized.blocked) event.blocked = true;
@@ -98,9 +100,38 @@ export function startChatTownServer(
   bus = eventBus,
 ): ChatTownServer {
   const server = createChatTownServer(bus);
+  let serverClosed = false;
+  let stopTwitch: (() => void) | undefined;
+  const closeServer = server.close.bind(server);
+  server.close = async () => {
+    serverClosed = true;
+    stopTwitch?.();
+    await closeServer();
+  };
   server.httpServer.listen(port, () => {
     console.log(`Chat Town server listening on port ${port}`);
-    void initializeTwitchAuth();
+    if (!config.twitchChannel) {
+      console.info(
+        "[Chat Town] Twitch events are disabled. Set TWITCH_CHANNEL to enable them.",
+      );
+      return;
+    }
+    void initializeTwitchAuth()
+      .then((auth) => {
+        if (!auth || serverClosed) return;
+        return startTwitchEventSub(bus, auth.provider, auth.userId, {
+          channel: config.twitchChannel as string,
+          botAccounts: config.twitchBotAccounts,
+          blockedWords: config.blockedWords,
+        }).then((stop) => {
+          if (serverClosed) stop();
+          else stopTwitch = stop;
+        });
+      })
+      .catch((error: unknown) => {
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error(`[Chat Town] Twitch EventSub failed to start: ${detail}`);
+      });
   });
   return server;
 }
