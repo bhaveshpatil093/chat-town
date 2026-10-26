@@ -10,6 +10,10 @@ interface BaseEvent<T extends string> {
 
 export interface ChatTownEventMap {
   chat: BaseEvent<"chat"> & UserIdentity & { message: string };
+  action: BaseEvent<"action"> &
+    UserIdentity & {
+      action: "dance" | "jump" | "wave" | "sit";
+    };
   follow: BaseEvent<"follow"> & UserIdentity;
   sub: BaseEvent<"sub"> & UserIdentity & { tier: string; months?: number };
   bits: BaseEvent<"bits"> & UserIdentity & { amount: number };
@@ -18,14 +22,24 @@ export interface ChatTownEventMap {
 }
 
 export type ChatTownEventType = keyof ChatTownEventMap;
+export type SimulatableEventType = Exclude<ChatTownEventType, "action">;
 export const CHAT_TOWN_EVENT_TYPES = [
   "chat",
+  "action",
   "follow",
   "sub",
   "bits",
   "raid",
   "levelup",
 ] as const satisfies readonly ChatTownEventType[];
+export const SIMULATABLE_EVENT_TYPES = [
+  "chat",
+  "follow",
+  "sub",
+  "bits",
+  "raid",
+  "levelup",
+] as const satisfies readonly SimulatableEventType[];
 export type ChatTownEvent<K extends ChatTownEventType = ChatTownEventType> =
   ChatTownEventMap[K];
 export type EventListener<K extends ChatTownEventType> = (

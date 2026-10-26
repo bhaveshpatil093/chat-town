@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import express, { type Express } from "express";
 import WebSocket, { WebSocketServer } from "ws";
 import { CHAT_TOWN_EVENT_TYPES, EventBus, type ChatTownEvent } from "./bus.js";
+import { createChatCommandHandler } from "./chatCommands.js";
 import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 
@@ -58,6 +59,7 @@ export function createChatTownServer(
   const unsubscribe = CHAT_TOWN_EVENT_TYPES.map((type) =>
     bus.on(type, broadcast),
   );
+  const removeCommandHandler = bus.on("chat", createChatCommandHandler(bus));
 
   return {
     app,
@@ -66,6 +68,7 @@ export function createChatTownServer(
     bus,
     async close(): Promise<void> {
       unsubscribe.forEach((removeListener) => removeListener());
+      removeCommandHandler();
       for (const client of webSocketServer.clients) client.terminate();
 
       await new Promise<void>((resolveClose, rejectClose) => {

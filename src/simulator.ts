@@ -2,12 +2,12 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { config } from "./config.js";
 import {
-  CHAT_TOWN_EVENT_TYPES,
+  SIMULATABLE_EVENT_TYPES,
   type ChatTownEvent,
-  type ChatTownEventType,
+  type SimulatableEventType,
 } from "./bus.js";
 
-export type SimulationType = ChatTownEventType | "all";
+export type SimulationType = SimulatableEventType | "all";
 
 export interface SimulationRequest {
   type: SimulationType;
@@ -41,7 +41,7 @@ export function parseSimulationRequest(
   const type = body.type ?? "all";
   if (
     typeof type !== "string" ||
-    (type !== "all" && !isChatTownEventType(type))
+    (type !== "all" && !isSimulatableEventType(type))
   ) {
     return null;
   }
@@ -94,7 +94,7 @@ export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
     const value = args[index + 1];
 
     if (option === "--type") {
-      if (!value || (value !== "all" && !isChatTownEventType(value))) {
+      if (!value || (value !== "all" && !isSimulatableEventType(value))) {
         throw new Error(`Invalid --type value: ${value ?? "missing"}`);
       }
       type = value;
@@ -132,7 +132,8 @@ export function generateFakeEvents(
   random: () => number = Math.random,
   now: () => number = Date.now,
 ): ChatTownEvent[] {
-  const types = request.type === "all" ? CHAT_TOWN_EVENT_TYPES : [request.type];
+  const types =
+    request.type === "all" ? SIMULATABLE_EVENT_TYPES : [request.type];
 
   return types.map((type, index) => {
     const displayName = request.username ?? choose(names, random);
@@ -220,8 +221,8 @@ function randomInteger(min: number, max: number, random: () => number): number {
   return Math.floor(random() * (max - min + 1)) + min;
 }
 
-function isChatTownEventType(value: string): value is ChatTownEventType {
-  return CHAT_TOWN_EVENT_TYPES.some((type) => type === value);
+function isSimulatableEventType(value: string): value is SimulatableEventType {
+  return SIMULATABLE_EVENT_TYPES.some((type) => type === value);
 }
 
 if (

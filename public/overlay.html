@@ -121,14 +121,18 @@
       };
       const townGraphics = new Graphics();
       const depthLayer = new Container();
+      const effectLayer = new Container();
       depthLayer.sortableChildren = true;
       const decorations = [];
+      const townAdditions = [];
       const characters = new Map();
       const characterPool = [];
+      const effectQueue = [];
+      let activeEffect = null;
       const occupiedTiles = new Set();
       const reservedTiles = new Set();
       const walkDirections = ["up", "down", "left", "right"];
-      app.stage.addChild(townGraphics, depthLayer);
+      app.stage.addChild(townGraphics, depthLayer, effectLayer);
 
       function drawTownMap() {
         townGraphics.clear();
@@ -159,6 +163,21 @@
               addHouse(rowIndex, columnIndex, tileWidth, tileHeight);
           });
         });
+
+        for (const addition of townAdditions) {
+          addition.sprite =
+            addition.kind === "house"
+              ? addHouse(addition.row, addition.column, tileWidth, tileHeight)
+              : addTree(addition.row, addition.column, tileWidth, tileHeight);
+          if (activeEffect?.addition === addition) {
+            const progress = Math.min(
+              activeEffect.elapsed / activeEffect.duration,
+              1,
+            );
+            addition.sprite.scale.set(0.55 + (1 - (1 - progress) ** 3) * 0.45);
+            addition.sprite.alpha = Math.min(1, progress * 2);
+          }
+        }
 
         for (const character of characters.values()) {
           if (character.state === "walking") {
@@ -232,6 +251,7 @@
         tree.zIndex = baseY + 0.1;
         depthLayer.addChild(tree);
         decorations.push(tree);
+        return tree;
       }
 
       function addHouse(row, column, tileWidth, tileHeight) {
@@ -284,6 +304,7 @@
         house.zIndex = baseY + 0.1;
         depthLayer.addChild(house);
         decorations.push(house);
+        return house;
       }
 
       drawTownMap();
@@ -413,6 +434,8 @@
           target: null,
           bubble: null,
           fadeElapsed: 0,
+          action: null,
+          actionElapsed: 0,
         });
         sprite.alpha = 1;
         sprite.visible = true;
@@ -525,6 +548,10 @@
           pixelRect(5 - stride, 9, 1, 2, outfit.pants);
           pixelRect(1 + stride, 11, 2, 1, "#40333a");
           pixelRect(5 - stride, 11, 2, 1, "#40333a");
+        }
+
+        if (character.action === "wave") {
+          pixelRect(direction === "left" ? 1 : 6, 0, 1, 5, skinColor);
         }
       }
 
@@ -722,6 +749,7 @@
             continue;
           }
           advanceSpeechBubble(character, deltaMs);
+          updateCharacterAction(character, deltaMs);
           if (character.state !== "walking") {
             character.bobTime += deltaMs;
             character.sprite.y =
@@ -774,6 +802,36 @@
         }
       }
 
+      function updateCharacterAction(character, deltaMs) {
+        if (!character.action) return;
+        character.actionElapsed += deltaMs;
+        const progress = Math.min(character.actionElapsed / 2_000, 1);
+        const { graphics, action } = character;
+        if (action === "jump") {
+          const lift = Math.sin(progress * Math.PI) * character.tileSize * 0.48;
+          graphics.y = -lift;
+          character.nameLabel.y = -(character.tileSize * 1.55) - lift;
+        } else if (action === "sit") {
+          graphics.scale.y = 0.72;
+          graphics.y = character.tileSize * 0.18;
+        } else {
+          graphics.rotation = Math.sin(character.actionElapsed / 150) * 0.1;
+        }
+        if (action === "wave") {
+          graphics.rotation = Math.sin(character.actionElapsed / 220) * 0.07;
+        }
+        if (character.actionElapsed >= 2_000) {
+          character.action = null;
+          character.actionElapsed = 0;
+          graphics.y = 0;
+          graphics.rotation = 0;
+          graphics.scale.set(1);
+          character.nameLabel.y = -(character.tileSize * 1.55);
+          renderCharacter(character);
+        }
+        positionSpeechBubble(character);
+      }
+
       function beginDespawn(character) {
         if (character.target) reservedTiles.delete(character.target.key);
         character.target = null;
@@ -795,12 +853,286 @@
         characterPool.push(character);
       }
 
+      function queueEffect(event) {
+        effectQueue.push(event);
+      }
+
+      function updateEffects(elapsedMs) {
+        if (!activeEffect) startNextEffect();
+        if (!activeEffect) return;
+        activeEffect.elapsed += Math.min(elapsedMs, 50);
+        const progress = Math.min(
+          activeEffect.elapsed / activeEffect.duration,
+          1,
+        );
+
+        if (activeEffect.type === "follow") {
+          const eased = 1 - (1 - progress) ** 3;
+          activeEffect.addition.sprite.scale.set(0.55 + eased * 0.45);
+          activeEffect.addition.sprite.alpha = Math.min(1, progress * 2);
+          activeEffect.label.alpha = Math.min(1, progress * 3);
+          activeEffect.label.y = activeEffect.labelStartY - progress * 34;
+        } else if (activeEffect.type === "sub") {
+          drawFireworks(activeEffect, progress);
+          activeEffect.label.alpha =
+            Math.min(1, progress * 5) * Math.min(1, (1 - progress) * 5);
+        } else {
+          drawBitsRain(activeEffect, progress);
+          activeEffect.label.alpha =
+            Math.min(1, progress * 5) * Math.min(1, (1 - progress) * 5);
+        }
+
+        if (progress >= 1) finishActiveEffect();
+      }
+
+      function startNextEffect() {
+        while (!activeEffect && effectQueue.length) {
+          const event = effectQueue.shift();
+          if (event.type === "follow") startFollowEffect(event);
+          else if (event.type === "sub") startSubscriptionEffect(event);
+          else if (event.type === "bits") startBitsEffect(event);
+        }
+      }
+
+      function startFollowEffect(event) {
+        let kind = Math.random() < 0.5 ? "tree" : "house";
+        let spot = chooseDecorationSpot(kind);
+        if (!spot) {
+          kind = kind === "tree" ? "house" : "tree";
+          spot = chooseDecorationSpot(kind);
+        }
+        if (!spot) return;
+        const addition = {
+          kind,
+          row: spot.row,
+          column: spot.column,
+          sprite: null,
+        };
+        townAdditions.push(addition);
+        const tileWidth = app.screen.width / townMap[0].length;
+        const tileHeight = app.screen.height / townMap.length;
+        addition.sprite =
+          kind === "house"
+            ? addHouse(spot.row, spot.column, tileWidth, tileHeight)
+            : addTree(spot.row, spot.column, tileWidth, tileHeight);
+        addition.sprite.scale.set(0.55);
+        addition.sprite.alpha = 0.1;
+        const label = makeEffectLabel(`Welcome, ${event.displayName}!`, 18);
+        const baseY = (spot.row + 1) * tileHeight - tileHeight * 1.3;
+        label.position.set((spot.column + 0.5) * tileWidth, baseY);
+        effectLayer.addChild(label);
+        activeEffect = {
+          type: "follow",
+          elapsed: 0,
+          duration: 1_500,
+          addition,
+          label,
+          labelStartY: baseY,
+        };
+      }
+
+      function chooseDecorationSpot(kind) {
+        const blocked = new Set();
+        for (let row = 0; row < townMap.length; row += 1) {
+          for (let column = 0; column < townMap[row].length; column += 1) {
+            const tile = townMap[row][column];
+            if (tile === "T") blocked.add(`${row}:${column}`);
+            if (tile === "H") {
+              for (let offset = -1; offset <= 1; offset += 1) {
+                blocked.add(`${row}:${column + offset}`);
+              }
+            }
+          }
+        }
+        for (const addition of townAdditions) {
+          const radius = addition.kind === "house" ? 1 : 0;
+          for (let offset = -radius; offset <= radius; offset += 1) {
+            blocked.add(`${addition.row}:${addition.column + offset}`);
+          }
+        }
+        for (const key of occupiedTiles) blocked.add(key);
+        for (const key of reservedTiles) blocked.add(key);
+
+        const options = [];
+        townMap.forEach((row, rowIndex) => {
+          [...row].forEach((tile, columnIndex) => {
+            if (tile !== "g" || rowIndex < 3) return;
+            const radius = kind === "house" ? 1 : 0;
+            const cells = Array.from(
+              { length: radius * 2 + 1 },
+              (_, index) => `${rowIndex}:${columnIndex + index - radius}`,
+            );
+            if (
+              cells.some((key) => blocked.has(key)) ||
+              columnIndex - radius < 0 ||
+              columnIndex + radius >= row.length
+            ) {
+              return;
+            }
+            options.push({ row: rowIndex, column: columnIndex });
+          });
+        });
+        return options.length ? choose(options, Math.random) : null;
+      }
+
+      function startSubscriptionEffect(event) {
+        const tier = event.tier === "3000" ? 3 : event.tier === "2000" ? 2 : 1;
+        const duration = 2_500 + tier * 350;
+        const graphics = new Graphics();
+        const label = makeEffectLabel(
+          `${event.displayName} · Tier ${tier}`,
+          24,
+        );
+        label.position.set(
+          app.screen.width / 2,
+          Math.max(40, app.screen.height * 0.16),
+        );
+        effectLayer.addChild(graphics, label);
+        const bursts = Array.from({ length: 2 + tier }, (_, index) => ({
+          x: app.screen.width * (0.25 + (index * 0.5) / (1 + tier)),
+          y: app.screen.height * (0.2 + Math.random() * 0.22),
+          delay: index * 0.12,
+          color: ["#ffd166", "#9be7c4", "#a9c7ff", "#f2a7d8"][index % 4],
+          size: 0.7 + tier * 0.15,
+        }));
+        activeEffect = {
+          type: "sub",
+          elapsed: 0,
+          duration,
+          graphics,
+          label,
+          bursts,
+        };
+      }
+
+      function startBitsEffect(event) {
+        const amount = Math.max(1, Number(event.amount) || 1);
+        const count = Math.min(48, 8 + Math.round(Math.sqrt(amount) * 2));
+        const graphics = new Graphics();
+        const label = makeEffectLabel(
+          `${event.displayName} sent ${amount} bits!`,
+          22,
+        );
+        label.position.set(
+          app.screen.width / 2,
+          Math.max(38, app.screen.height * 0.12),
+        );
+        effectLayer.addChild(graphics, label);
+        const coins = Math.random() < 0.5;
+        const particles = Array.from({ length: count }, () => ({
+          x: Math.random() * app.screen.width,
+          y: -Math.random() * app.screen.height * 0.6,
+          drift: (Math.random() - 0.5) * app.screen.width * 0.12,
+          size: 3 + Math.random() * 5,
+          color: ["#ffd166", "#ffe7a3", "#92e6c1", "#f2a7d8"][
+            Math.floor(Math.random() * 4)
+          ],
+        }));
+        activeEffect = {
+          type: "bits",
+          elapsed: 0,
+          duration: 2_400 + Math.min(1_000, Math.sqrt(amount) * 20),
+          graphics,
+          label,
+          particles,
+          coins,
+        };
+      }
+
+      function drawFireworks(effect, progress) {
+        effect.graphics.clear();
+        for (const burst of effect.bursts) {
+          const local = Math.max(
+            0,
+            Math.min(1, (progress - burst.delay) / (1 - burst.delay)),
+          );
+          const fade = (1 - local) * 0.72;
+          const radius =
+            12 +
+            local *
+              Math.min(app.screen.width, app.screen.height) *
+              0.12 *
+              burst.size;
+          for (let particle = 0; particle < 14; particle += 1) {
+            const angle = (particle / 14) * Math.PI * 2;
+            const wobble = 0.9 + ((particle * 13) % 5) * 0.04;
+            effect.graphics
+              .circle(
+                burst.x + Math.cos(angle) * radius * wobble,
+                burst.y + Math.sin(angle) * radius * wobble,
+                2.5 * burst.size,
+              )
+              .fill({ color: burst.color, alpha: fade });
+          }
+        }
+      }
+
+      function drawBitsRain(effect, progress) {
+        effect.graphics.clear();
+        const travel = app.screen.height + 100;
+        for (const particle of effect.particles) {
+          const y = particle.y + progress * travel;
+          const x =
+            particle.x +
+            Math.sin(progress * Math.PI * 2 + particle.y) * particle.drift;
+          const alpha = Math.min(
+            0.85,
+            Math.max(0, (app.screen.height + 80 - y) / 100),
+          );
+          if (effect.coins) {
+            effect.graphics
+              .circle(x, y, particle.size)
+              .fill({ color: particle.color, alpha });
+            effect.graphics
+              .rect(x - particle.size * 0.45, y - 1, particle.size * 0.9, 2)
+              .fill({ color: "#9f6b18", alpha: alpha * 0.8 });
+          } else {
+            effect.graphics
+              .rect(x, y, particle.size * 1.3, particle.size * 0.65)
+              .fill({ color: particle.color, alpha });
+          }
+        }
+      }
+
+      function makeEffectLabel(message, fontSize) {
+        const label = new Text({
+          text: message,
+          style: {
+            fontFamily: "Arial, sans-serif",
+            fontSize,
+            fontWeight: "bold",
+            fill: "#fff8db",
+            stroke: { fill: "#18241b", width: 4 },
+            dropShadow: {
+              color: "#000000",
+              alpha: 0.7,
+              blur: 3,
+              distance: 2,
+              angle: Math.PI / 2,
+            },
+          },
+          anchor: { x: 0.5, y: 0.5 },
+        });
+        return label;
+      }
+
+      function finishActiveEffect() {
+        if (activeEffect.type !== "follow") {
+          effectLayer.removeChild(activeEffect.graphics);
+          activeEffect.graphics.destroy();
+        }
+        effectLayer.removeChild(activeEffect.label);
+        activeEffect.label.destroy();
+        activeEffect = null;
+      }
+
       function randomBetween(min, max) {
         return min + Math.random() * (max - min);
       }
 
       app.ticker.add((ticker) => {
         updateCharacters(ticker.elapsedMS);
+        updateEffects(ticker.elapsedMS);
         updateDebugOverlay(ticker.elapsedMS);
       });
 
@@ -863,8 +1195,39 @@
                   character.sprite.alpha = 1;
                 }
                 character.lastChatAt = Date.now();
-                showSpeechBubble(character, event.message);
+                if (!isActionMessage(event.message)) {
+                  showSpeechBubble(character, event.message);
+                }
               }
+            } else if (
+              event.type === "action" &&
+              typeof event.displayName === "string" &&
+              typeof event.userId === "string" &&
+              ["dance", "jump", "wave", "sit"].includes(event.action)
+            ) {
+              let character = characters.get(event.userId);
+              if (!character) {
+                character = spawnCharacter(event.displayName, event.userId);
+              }
+              if (character) {
+                if (character.state === "walking" && character.target) {
+                  reservedTiles.delete(character.target.key);
+                  character.target = null;
+                  character.state = "pause";
+                  character.stateTimer = 2_000;
+                }
+                character.action = event.action;
+                character.actionElapsed = 0;
+                character.graphics.y = 0;
+                character.graphics.rotation = 0;
+                character.graphics.scale.set(1);
+                renderCharacter(character);
+              }
+            } else if (
+              ["follow", "sub", "bits"].includes(event.type) &&
+              typeof event.displayName === "string"
+            ) {
+              queueEffect(event);
             }
           } catch (error) {
             console.warn("[Chat Town overlay] received invalid JSON", error);
@@ -885,6 +1248,10 @@
           console.error("[Chat Town overlay] WebSocket error", error);
           socket.close();
         });
+      }
+
+      function isActionMessage(message) {
+        return /^!(dance|jump|wave|sit)$/i.test(message.trim());
       }
 
       connect();
