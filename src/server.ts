@@ -4,9 +4,10 @@ import { resolve } from "node:path";
 import express, { type Express } from "express";
 import WebSocket, { WebSocketServer } from "ws";
 import { CHAT_TOWN_EVENT_TYPES, EventBus, type ChatTownEvent } from "./bus.js";
+import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 
-export const DEFAULT_PORT = 3000;
+export const DEFAULT_PORT = config.port;
 export const eventBus = new EventBus();
 
 const PUBLIC_DIRECTORY = fileURLToPath(new URL("../public/", import.meta.url));

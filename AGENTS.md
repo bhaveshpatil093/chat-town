@@ -9,6 +9,7 @@ Chat Town is a Node.js application written in TypeScript. The planned applicatio
 - PixiJS loaded from a CDN in the browser client; do not bundle PixiJS as an npm dependency.
 - Twurple for Twitch API and chat integrations.
 - `better-sqlite3` for local SQLite persistence.
+- Zod for validating application environment variables.
 - `tsx` for running TypeScript directly during development and simulation.
 - Vitest for the unit test suite.
 - Vite 7 as Vitest's runtime dependency.
@@ -23,6 +24,8 @@ The repository currently contains the TypeScript scaffold and development toolin
 - `test/` — automated tests, using Vitest.
 - `dist/` — compiled JavaScript output from the build; generated and ignored by Git.
 - `package.json` and `package-lock.json` — scripts and dependency manifest/lockfile.
+- `.env.example` — documented environment variable defaults; copy to `.env` for local configuration.
+- `src/config.ts` — validated application configuration.
 - `.npmrc` — npm's peer-dependency setting for reproducible installs with the current npm resolver.
 - `tsconfig.json` — TypeScript compiler settings.
 - `eslint.config.js` — ESLint configuration.

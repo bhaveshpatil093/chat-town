@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import { config } from "./config.js";
 import {
   CHAT_TOWN_EVENT_TYPES,
   type ChatTownEvent,
@@ -63,7 +64,7 @@ export function parseSimulationRequest(
 export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
   let type: SimulationType = "all";
   let viewers: number | undefined;
-  let url = "http://127.0.0.1:3000";
+  let url = `http://127.0.0.1:${config.port}`;
 
   for (let index = 0; index < args.length; index += 1) {
     const option = args[index];

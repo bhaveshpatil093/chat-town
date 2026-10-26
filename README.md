@@ -2,12 +2,16 @@
 
 A TypeScript Node.js application with an Express and WebSocket server.
 
-## Getting started
+## Quick start
 
 ```sh
 npm install
+cp .env.example .env
 npm run dev
 ```
+
+Open [http://localhost:3000](http://localhost:3000). The server reads `.env` at startup; `PORT` defaults to `3000` and must be an integer from `1` to `65535`.
+Use Node.js 20.12 or newer.
 
 ## Scripts
 
@@ -15,7 +19,7 @@ npm run dev
 - `npm run build` compiles `src/` to `dist/`.
 - `npm start` runs the compiled server on port 3000.
 - `npm test` runs the Vitest unit test suite.
-- `npm run sim` starts the simulation entry point.
+- `npm run sim` emits fake events to the running server.
 - `npm run lint` checks the code with ESLint.
 - `npm run format` formats files with Prettier.
 
