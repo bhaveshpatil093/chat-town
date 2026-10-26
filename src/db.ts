@@ -37,6 +37,10 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
       );
     `,
   },
+  {
+    version: 2,
+    sql: `ALTER TABLE viewers ADD COLUMN last_chat_xp_at INTEGER;`,
+  },
 ];
 
 /** Create the migration ledger and apply each unapplied migration atomically. */

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { createChatTownServer, type ChatTownServer } from "../src/server.js";
 import { EventBus, type ChatTownEvent } from "../src/bus.js";
+import { createDatabase } from "../src/db.js";
 
 describe("Chat Town server", () => {
   let chatTownServer: ChatTownServer | undefined;
@@ -14,7 +15,7 @@ describe("Chat Town server", () => {
   });
 
   it("serves files from the public directory", async () => {
-    chatTownServer = createChatTownServer();
+    chatTownServer = createTestServer();
     await listen(chatTownServer);
 
     const response = await fetch(serverUrl(chatTownServer));
@@ -23,7 +24,7 @@ describe("Chat Town server", () => {
   });
 
   it("reports application health and Twitch connection status", async () => {
-    chatTownServer = createChatTownServer();
+    chatTownServer = createTestServer();
     await listen(chatTownServer);
 
     const health = await fetch(`${serverUrl(chatTownServer)}health`);
@@ -42,11 +43,15 @@ describe("Chat Town server", () => {
 
   it("broadcasts every normalized event to connected clients as JSON", async () => {
     const bus = new EventBus();
-    chatTownServer = createChatTownServer(bus);
+    chatTownServer = createTestServer(bus);
     await listen(chatTownServer);
 
     const client = new WebSocket(webSocketUrl(chatTownServer));
     await once(client, "open");
+    const receivedEvents: ChatTownEvent[] = [];
+    client.on("message", (payload) => {
+      receivedEvents.push(JSON.parse(payload.toString()) as ChatTownEvent);
+    });
 
     const events: ChatTownEvent[] = [
       {
@@ -83,26 +88,24 @@ describe("Chat Town server", () => {
         displayName: "Townie",
         viewerCount: 20,
       },
-      {
-        type: "levelup",
-        timestamp: 6,
-        userId: "user-1",
-        displayName: "Townie",
-        level: 2,
-      },
     ];
 
     for (const event of events) {
-      const messageReceived = once(client, "message");
       bus.emit(event);
-      const [payload] = await messageReceived;
-      expect(JSON.parse(payload.toString())).toEqual(event);
+      await expect(waitForEvent(receivedEvents, event.type)).resolves.toEqual(
+        event,
+      );
     }
+    expect(
+      receivedEvents.some(
+        (event) => event.type === "levelup" && event.userId === "user-1",
+      ),
+    ).toBe(true);
   });
 
   it("generates and broadcasts events through the simulation route", async () => {
     const bus = new EventBus();
-    chatTownServer = createChatTownServer(bus);
+    chatTownServer = createTestServer(bus);
     await listen(chatTownServer);
 
     const client = new WebSocket(webSocketUrl(chatTownServer));
@@ -126,7 +129,7 @@ describe("Chat Town server", () => {
 
   it("sanitizes chat before returning and broadcasting the event", async () => {
     const bus = new EventBus();
-    chatTownServer = createChatTownServer(bus);
+    chatTownServer = createTestServer(bus);
     await listen(chatTownServer);
 
     const client = new WebSocket(webSocketUrl(chatTownServer));
@@ -154,7 +157,7 @@ describe("Chat Town server", () => {
   });
 
   it("rejects invalid simulation requests", async () => {
-    chatTownServer = createChatTownServer();
+    chatTownServer = createTestServer();
     await listen(chatTownServer);
 
     const response = await fetch(`${serverUrl(chatTownServer)}api/sim`, {
@@ -166,6 +169,10 @@ describe("Chat Town server", () => {
     expect(response.status).toBe(400);
   });
 });
+
+function createTestServer(bus = new EventBus()): ChatTownServer {
+  return createChatTownServer(bus, undefined, createDatabase(":memory:"));
+}
 
 async function listen(chatTownServer: ChatTownServer): Promise<void> {
   await new Promise<void>((resolveListen) => {
@@ -180,4 +187,17 @@ function serverUrl(chatTownServer: ChatTownServer): string {
 
 function webSocketUrl(chatTownServer: ChatTownServer): string {
   return serverUrl(chatTownServer).replace("http:", "ws:");
+}
+
+async function waitForEvent(
+  receivedEvents: ChatTownEvent[],
+  expectedType: ChatTownEvent["type"],
+): Promise<ChatTownEvent> {
+  while (true) {
+    const matchingIndex = receivedEvents.findIndex(
+      (event) => event.type === expectedType,
+    );
+    if (matchingIndex >= 0) return receivedEvents.splice(matchingIndex, 1)[0]!;
+    await new Promise((resolveNextFrame) => setTimeout(resolveNextFrame, 0));
+  }
 }

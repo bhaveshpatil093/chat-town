@@ -134,8 +134,10 @@
       const houses = [];
       const townAdditions = [];
       const characters = new Map();
+      const viewerProfiles = new Map();
       const characterPool = [];
       const effectQueue = [];
+      const levelupCelebrations = [];
       let activeEffect = null;
       const occupiedTiles = new Set();
       const reservedTiles = new Set();
@@ -199,7 +201,14 @@
         for (const addition of townAdditions) {
           addition.sprite =
             addition.kind === "house"
-              ? addHouse(addition.row, addition.column, tileWidth, tileHeight)
+              ? addHouse(
+                  addition.row,
+                  addition.column,
+                  tileWidth,
+                  tileHeight,
+                  addition.houseStyle ?? "tent",
+                  addition.ownerUserId ?? null,
+                )
               : addTree(addition.row, addition.column, tileWidth, tileHeight);
           if (activeEffect?.addition === addition) {
             const progress = Math.min(
@@ -287,44 +296,116 @@
         return tree;
       }
 
-      function addHouse(row, column, tileWidth, tileHeight) {
+      function addHouse(
+        row,
+        column,
+        tileWidth,
+        tileHeight,
+        houseStyle = "house",
+        ownerUserId = null,
+      ) {
         const house = new Container();
         const graphics = new Graphics();
         const windowGraphics = new Graphics();
         const baseX = (column + 0.5) * tileWidth;
         const baseY = (row + 1) * tileHeight;
-
-        graphics
-          .rect(
-            -tileWidth * 0.72,
-            -tileHeight * 1.2,
-            tileWidth * 1.44,
-            tileHeight * 1.2,
-          )
-          .fill("#d6a36d");
-        graphics
-          .moveTo(-tileWidth * 0.9, -tileHeight * 1.16)
-          .lineTo(0, -tileHeight * 2.05)
-          .lineTo(tileWidth * 0.9, -tileHeight * 1.16)
-          .closePath()
-          .fill("#9b4e43");
-        graphics
-          .rect(
-            -tileWidth * 0.14,
-            -tileHeight * 0.46,
-            tileWidth * 0.28,
-            tileHeight * 0.46,
-          )
-          .fill("#684433");
+        drawHouseBody(graphics, houseStyle, tileWidth, tileHeight);
         house.addChild(graphics, windowGraphics);
         house.position.set(baseX, baseY);
         house.zIndex = baseY + 0.1;
         house.windowGraphics = windowGraphics;
+        house.graphics = graphics;
+        house.houseStyle = houseStyle;
+        house.ownerUserId = ownerUserId;
+        house.row = row;
+        house.column = column;
         depthLayer.addChild(house);
         decorations.push(house);
         houses.push(house);
         drawHouseWindows(house, nightLevel, tileWidth, tileHeight);
         return house;
+      }
+
+      function drawHouseBody(graphics, houseStyle, tileWidth, tileHeight) {
+        graphics.clear();
+        if (houseStyle === "tent") {
+          graphics
+            .moveTo(-tileWidth * 0.75, 0)
+            .lineTo(0, -tileHeight * 1.5)
+            .lineTo(tileWidth * 0.75, 0)
+            .closePath()
+            .fill("#c98255");
+          graphics
+            .moveTo(-tileWidth * 0.25, 0)
+            .lineTo(0, -tileHeight * 0.68)
+            .lineTo(tileWidth * 0.25, 0)
+            .closePath()
+            .fill("#493d39");
+          graphics
+            .moveTo(-tileWidth * 0.75, 0)
+            .lineTo(0, -tileHeight * 1.5)
+            .lineTo(tileWidth * 0.75, 0)
+            .closePath()
+            .stroke({
+              color: "#f1c48d",
+              width: Math.max(1, tileWidth * 0.035),
+            });
+          return;
+        }
+
+        const isMansion = houseStyle === "mansion";
+        const isCabin = houseStyle === "cabin";
+        const bodyWidth = isMansion ? 1.72 : 1.44;
+        const bodyHeight = isMansion ? 1.46 : isCabin ? 0.98 : 1.2;
+        const roofHeight = isMansion ? 0.86 : isCabin ? 0.62 : 0.89;
+        const wallColor = isMansion
+          ? "#e9d8b4"
+          : isCabin
+            ? "#a86f49"
+            : "#d6a36d";
+        const roofColor = isMansion
+          ? "#564963"
+          : isCabin
+            ? "#6d4937"
+            : "#9b4e43";
+        graphics
+          .rect(
+            (-tileWidth * bodyWidth) / 2,
+            -tileHeight * bodyHeight,
+            tileWidth * bodyWidth,
+            tileHeight * bodyHeight,
+          )
+          .fill(wallColor);
+        graphics
+          .moveTo(-tileWidth * (bodyWidth / 2 + 0.18), -tileHeight * bodyHeight)
+          .lineTo(0, -tileHeight * (bodyHeight + roofHeight))
+          .lineTo(tileWidth * (bodyWidth / 2 + 0.18), -tileHeight * bodyHeight)
+          .closePath()
+          .fill(roofColor);
+        graphics
+          .rect(
+            -tileWidth * 0.14,
+            -tileHeight * (isMansion ? 0.5 : 0.46),
+            tileWidth * 0.28,
+            tileHeight * (isMansion ? 0.5 : 0.46),
+          )
+          .fill("#684433");
+        if (isMansion) {
+          graphics
+            .rect(
+              -tileWidth * 0.24,
+              -tileHeight * 1.76,
+              tileWidth * 0.48,
+              tileHeight * 0.3,
+            )
+            .fill("#e9d8b4");
+          graphics
+            .moveTo(-tileWidth * 0.34, -tileHeight * 1.72)
+            .lineTo(0, -tileHeight * 2.04)
+            .lineTo(tileWidth * 0.34, -tileHeight * 1.72)
+            .closePath()
+            .fill(roofColor);
+        }
       }
 
       function drawHouseWindows(house, level, tileWidth, tileHeight) {
@@ -339,22 +420,48 @@
           )
           .join("")}`;
         graphics.clear();
+        if (house.houseStyle === "tent") return;
+        const windowY =
+          house.houseStyle === "cabin"
+            ? -tileHeight * 0.68
+            : house.houseStyle === "mansion"
+              ? -tileHeight * 1.12
+              : -tileHeight * 0.86;
+        const windowSize = house.houseStyle === "mansion" ? 0.2 : 0.24;
         graphics
           .rect(
             -tileWidth * 0.55,
-            -tileHeight * 0.86,
-            tileWidth * 0.24,
-            tileHeight * 0.24,
+            windowY,
+            tileWidth * windowSize,
+            tileHeight * windowSize,
           )
           .fill({ color, alpha: 0.92 });
         graphics
           .rect(
             tileWidth * 0.31,
-            -tileHeight * 0.86,
-            tileWidth * 0.24,
-            tileHeight * 0.24,
+            windowY,
+            tileWidth * windowSize,
+            tileHeight * windowSize,
           )
           .fill({ color, alpha: 0.92 });
+        if (house.houseStyle === "mansion") {
+          graphics
+            .rect(
+              -tileWidth * 0.55,
+              -tileHeight * 0.68,
+              tileWidth * 0.2,
+              tileHeight * 0.2,
+            )
+            .fill({ color, alpha: 0.92 });
+          graphics
+            .rect(
+              tileWidth * 0.35,
+              -tileHeight * 0.68,
+              tileWidth * 0.2,
+              tileHeight * 0.2,
+            )
+            .fill({ color, alpha: 0.92 });
+        }
       }
 
       function setScene(scene) {
@@ -483,12 +590,18 @@
         if (!spawnTile) return null;
 
         const random = createSeededRandom(hashUsername(normalizedUsername));
+        const profile = viewerProfiles.get(identity);
         const appearance = {
           username,
           skinColor: choose(skinColors, random),
           hairColor: choose(hairColors, random),
           hairStyle: choose(hairStyles, random),
           outfit: choose(outfits, random),
+          level: profile?.level ?? 1,
+          xp: profile?.xp ?? 0,
+          hat: profile?.hat ?? null,
+          houseStyle: profile?.houseStyle ?? "tent",
+          nameplateColor: profile?.nameplateColor ?? "#ffffff",
         };
         const character = createCharacter(appearance);
         character.identity = identity;
@@ -510,6 +623,65 @@
         depthLayer.addChild(character.sprite);
         characters.set(identity, character);
         return character;
+      }
+
+      function applyViewerProfile(userId, profile) {
+        const current = {
+          xp: Number(profile.xp) || 0,
+          level: Number(profile.level) || 1,
+          hat: typeof profile.hat === "string" ? profile.hat : null,
+          houseStyle: ["tent", "cabin", "house", "mansion"].includes(
+            profile.houseStyle,
+          )
+            ? profile.houseStyle
+            : "tent",
+          nameplateColor:
+            typeof profile.nameplateColor === "string"
+              ? profile.nameplateColor
+              : "#ffffff",
+        };
+        viewerProfiles.set(userId, current);
+        const character = characters.get(userId);
+        if (character) {
+          Object.assign(character.appearance, current);
+          character.nameLabel.style.fill = current.nameplateColor;
+          renderCharacter(character);
+        }
+        upgradeViewerHouses(userId, current.houseStyle);
+      }
+
+      function upgradeViewerHouses(userId, houseStyle) {
+        const tileWidth = app.screen.width / townMap[0].length;
+        const tileHeight = app.screen.height / townMap.length;
+        for (const addition of townAdditions) {
+          if (
+            addition.kind !== "house" ||
+            addition.ownerUserId !== userId ||
+            addition.sprite.houseStyle === houseStyle
+          ) {
+            continue;
+          }
+          const previous = addition.sprite;
+          const previousScale = previous.scale.x;
+          const previousAlpha = previous.alpha;
+          depthLayer.removeChild(previous);
+          const decorationIndex = decorations.indexOf(previous);
+          const houseIndex = houses.indexOf(previous);
+          if (decorationIndex >= 0) decorations.splice(decorationIndex, 1);
+          if (houseIndex >= 0) houses.splice(houseIndex, 1);
+          previous.destroy({ children: true });
+          addition.sprite = addHouse(
+            addition.row,
+            addition.column,
+            tileWidth,
+            tileHeight,
+            houseStyle,
+            userId,
+          );
+          addition.houseStyle = houseStyle;
+          addition.sprite.scale.set(previousScale);
+          addition.sprite.alpha = previousAlpha;
+        }
       }
 
       function chooseSpawnTile() {
@@ -563,6 +735,7 @@
         );
         drawCharacterShadow(shadowGraphics, tileSize);
         nameLabel.text = appearance.username;
+        nameLabel.style.fill = appearance.nameplateColor ?? "#ffffff";
         nameLabel.y = -(tileSize * 1.55);
         Object.assign(character, {
           appearance,
@@ -633,7 +806,8 @@
 
       function renderCharacter(character) {
         const { graphics, appearance, direction } = character;
-        const { skinColor, hairColor, hairStyle, outfit } = appearance;
+        const { skinColor, hairColor, hairStyle, outfit, hat, nameplateColor } =
+          appearance;
         const pixel = character.tileSize / 8;
         const walking = character.state === "walking";
         const frame = walking ? character.animationFrame : 0;
@@ -672,6 +846,22 @@
           }
         }
 
+        if (hat === "beanie") {
+          pixelRect(1, -1, 6, 2, "#526f9e");
+          pixelRect(1, 1, 6, 1, "#d4e0ee");
+        } else if (hat === "flower") {
+          pixelRect(2, -2, 2, 2, "#f1a9bc");
+          pixelRect(4, -2, 2, 2, "#f1a9bc");
+          pixelRect(3, -3, 2, 2, "#f1a9bc");
+          pixelRect(3, -1, 2, 2, "#ffd166");
+        } else if (hat === "crown") {
+          pixelRect(1, -2, 6, 1, "#e5b93f");
+          pixelRect(1, -3, 1, 2, "#ffdf70");
+          pixelRect(3, -4, 2, 3, "#ffdf70");
+          pixelRect(6, -3, 1, 2, "#ffdf70");
+          pixelRect(2, -1, 4, 1, "#b07e28");
+        }
+
         if (direction === "down") {
           pixelRect(3, 3, 1, 1, "#302a32");
           pixelRect(5, 3, 1, 1, "#302a32");
@@ -680,6 +870,8 @@
         } else if (direction === "right") {
           pixelRect(5, 3, 1, 1, "#302a32");
         }
+
+        character.nameLabel.style.fill = nameplateColor ?? "#ffffff";
 
         if (sideFacing) {
           pixelRect(2, 5, 4, 4, outfit.shirt);
@@ -1004,6 +1196,55 @@
         effectQueue.push(event);
       }
 
+      function showLevelupCelebration(event) {
+        const container = new Container();
+        const sparkles = new Graphics();
+        const label = makeEffectLabel(
+          `${event.displayName} reached level ${event.level}!`,
+          16,
+        );
+        label.y = 9;
+        container.addChild(sparkles, label);
+        container.position.set(app.screen.width / 2, app.screen.height * 0.22);
+        effectLayer.addChild(container);
+        levelupCelebrations.push({
+          container,
+          sparkles,
+          elapsed: 0,
+          baseY: container.y,
+        });
+      }
+
+      function updateLevelupCelebrations(elapsedMs) {
+        for (
+          let index = levelupCelebrations.length - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          const celebration = levelupCelebrations[index];
+          celebration.elapsed += Math.min(elapsedMs, 50);
+          const progress = Math.min(celebration.elapsed / 1_500, 1);
+          celebration.container.alpha =
+            Math.min(1, progress * 5) * Math.min(1, (1 - progress) * 4);
+          celebration.container.y = celebration.baseY - progress * 18;
+          celebration.container.scale.set(0.85 + Math.min(progress * 2, 0.15));
+          celebration.sparkles.clear();
+          for (let sparkle = 0; sparkle < 7; sparkle += 1) {
+            const angle = (sparkle / 7) * Math.PI * 2;
+            const radius =
+              24 + Math.sin(celebration.elapsed / 100 + sparkle) * 5;
+            celebration.sparkles
+              .circle(Math.cos(angle) * radius, Math.sin(angle) * 6, 2.5)
+              .fill({ color: sparkle % 2 ? "#ffd166" : "#a4d17b", alpha: 0.8 });
+          }
+          if (progress >= 1) {
+            effectLayer.removeChild(celebration.container);
+            celebration.container.destroy({ children: true });
+            levelupCelebrations.splice(index, 1);
+          }
+        }
+      }
+
       function updateEffects(elapsedMs) {
         if (!activeEffect) startNextEffect();
         if (!activeEffect) return;
@@ -1053,6 +1294,9 @@
           kind,
           row: spot.row,
           column: spot.column,
+          ownerUserId: event.userId,
+          houseStyle:
+            kind === "house" ? (event.profile?.houseStyle ?? "tent") : null,
           sprite: null,
         };
         townAdditions.push(addition);
@@ -1060,7 +1304,14 @@
         const tileHeight = app.screen.height / townMap.length;
         addition.sprite =
           kind === "house"
-            ? addHouse(spot.row, spot.column, tileWidth, tileHeight)
+            ? addHouse(
+                spot.row,
+                spot.column,
+                tileWidth,
+                tileHeight,
+                event.profile?.houseStyle ?? "tent",
+                event.userId,
+              )
             : addTree(spot.row, spot.column, tileWidth, tileHeight);
         addition.sprite.scale.set(0.55);
         addition.sprite.alpha = 0.1;
@@ -1280,6 +1531,7 @@
       app.ticker.add((ticker) => {
         updateCharacters(ticker.elapsedMS);
         updateEffects(ticker.elapsedMS);
+        updateLevelupCelebrations(ticker.elapsedMS);
         updateDayNight(ticker.elapsedMS);
         updateDebugOverlay(ticker.elapsedMS);
       });
@@ -1325,6 +1577,19 @@
             const event = JSON.parse(message.data);
             console.log("[Chat Town overlay] event", event);
             if (
+              typeof event.userId === "string" &&
+              event.profile &&
+              typeof event.profile === "object"
+            ) {
+              applyViewerProfile(event.userId, event.profile);
+            }
+            if (
+              event.type === "levelup" &&
+              typeof event.displayName === "string" &&
+              Number.isInteger(event.level)
+            ) {
+              showLevelupCelebration(event);
+            } else if (
               event.type === "chat" &&
               typeof event.displayName === "string" &&
               typeof event.message === "string" &&

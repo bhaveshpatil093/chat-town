@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import express, { type Express } from "express";
 import WebSocket, { WebSocketServer } from "ws";
+import { createDatabase } from "./db.js";
 import { CHAT_TOWN_EVENT_TYPES, EventBus, type ChatTownEvent } from "./bus.js";
 import { createChatCommandHandler } from "./chatCommands.js";
 import { sanitizeChatMessage } from "./chatSanitizer.js";
@@ -10,6 +11,7 @@ import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 import { initializeTwitchAuth } from "./twitchAuth.js";
 import { startTwitchEventSub } from "./twitch.js";
+import { createViewerProgression } from "./progression.js";
 import {
   configureTwitchStatus,
   getTwitchStatus,
@@ -26,12 +28,14 @@ export interface ChatTownServer {
   httpServer: Server;
   webSocketServer: WebSocketServer;
   bus: EventBus;
+  database: ReturnType<typeof createDatabase>;
   close(): Promise<void>;
 }
 
 export function createChatTownServer(
   bus = eventBus,
   publicDirectory = PUBLIC_DIRECTORY,
+  database = createDatabase(),
 ): ChatTownServer {
   configureTwitchStatus(config.twitchEnabled, config.twitchChannel);
   const app = express();
@@ -84,6 +88,7 @@ export function createChatTownServer(
     if (sanitized.blocked) event.blocked = true;
     else delete event.blocked;
   });
+  const removeViewerProgression = createViewerProgression(bus, database);
   const unsubscribe = CHAT_TOWN_EVENT_TYPES.map((type) =>
     bus.on(type, broadcast),
   );
@@ -94,21 +99,27 @@ export function createChatTownServer(
     httpServer,
     webSocketServer,
     bus,
+    database,
     async close(): Promise<void> {
       unsubscribe.forEach((removeListener) => removeListener());
       removeCommandHandler();
       removeChatSanitizer();
+      removeViewerProgression();
       for (const client of webSocketServer.clients) client.terminate();
 
-      await new Promise<void>((resolveClose, rejectClose) => {
-        webSocketServer.close((webSocketError) => {
-          httpServer.close((httpError) => {
-            const error = httpError ?? webSocketError;
-            if (error) rejectClose(error);
-            else resolveClose();
+      try {
+        await new Promise<void>((resolveClose, rejectClose) => {
+          webSocketServer.close((webSocketError) => {
+            httpServer.close((httpError) => {
+              const error = httpError ?? webSocketError;
+              if (error) rejectClose(error);
+              else resolveClose();
+            });
           });
         });
-      });
+      } finally {
+        database.close();
+      }
     },
   };
 }

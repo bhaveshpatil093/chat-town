@@ -31,7 +31,7 @@ describe("Chat Town database", () => {
     ]);
     expect(
       database.prepare("SELECT version FROM schema_migrations").pluck().all(),
-    ).toEqual([1]);
+    ).toEqual([1, 2]);
   });
 
   it("creates viewer fields with XP and level defaults", () => {
@@ -50,6 +50,7 @@ describe("Chat Town database", () => {
       level: 1,
       hat: null,
       house_style: null,
+      last_chat_xp_at: null,
     });
     expect((viewer as { first_seen: number }).first_seen).toEqual(
       expect.any(Number),
@@ -83,9 +84,9 @@ describe("Chat Town database", () => {
 
   it("does not reapply already-recorded migrations", () => {
     expect(migrateDatabase(database)).toEqual([]);
-    expect(DATABASE_MIGRATIONS.map(({ version }) => version)).toEqual([1]);
+    expect(DATABASE_MIGRATIONS.map(({ version }) => version)).toEqual([1, 2]);
     expect(
       database.prepare("SELECT version FROM schema_migrations").pluck().all(),
-    ).toEqual([1]);
+    ).toEqual([1, 2]);
   });
 });

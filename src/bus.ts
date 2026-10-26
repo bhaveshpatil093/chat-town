@@ -1,6 +1,15 @@
 export interface UserIdentity {
   userId: string;
   displayName: string;
+  profile?: ViewerProfile;
+}
+
+export interface ViewerProfile {
+  xp: number;
+  level: number;
+  hat: string | null;
+  houseStyle: "tent" | "cabin" | "house" | "mansion";
+  nameplateColor: string;
 }
 
 interface BaseEvent<T extends string> {
