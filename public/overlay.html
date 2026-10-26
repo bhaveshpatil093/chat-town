@@ -27,9 +27,22 @@
         Application,
         Container,
         Graphics,
+        Text,
       } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
 
       const app = new Application();
+      const requestedLabelSize = Number(
+        new URLSearchParams(window.location.search).get("labelSize"),
+      );
+      const defaultLabelFontSize = Math.round(
+        Math.max(14, Math.min(22, window.innerWidth / 64)),
+      );
+      const labelFontSize =
+        Number.isInteger(requestedLabelSize) &&
+        requestedLabelSize >= 10 &&
+        requestedLabelSize <= 48
+          ? requestedLabelSize
+          : defaultLabelFontSize;
       await app.init({
         resizeTo: window,
         autoDensity: true,
@@ -120,7 +133,9 @@
           }
 
           const tileSize = Math.min(tileWidth, tileHeight);
-          character.sprite.scale.set(tileSize / character.tileSize);
+          const characterScale = tileSize / character.tileSize;
+          character.sprite.scale.set(characterScale);
+          character.nameLabel.scale.set(1 / characterScale);
           character.tileSize = tileSize;
           character.baseX = (character.column + 0.5) * tileWidth;
           character.baseY = (character.row + 1) * tileHeight;
@@ -159,6 +174,7 @@
 
         const random = createSeededRandom(hashUsername(normalizedUsername));
         const appearance = {
+          username,
           skinColor: choose(skinColors, random),
           hairColor: choose(hairColors, random),
           hairStyle: choose(hairStyles, random),
@@ -188,7 +204,7 @@
         townMap.forEach((row, rowIndex) => {
           [...row].forEach((tile, columnIndex) => {
             const key = `${rowIndex}:${columnIndex}`;
-            if (tile === "g") {
+            if (tile === "g" && rowIndex > 0) {
               const spot = { row: rowIndex, column: columnIndex, key };
               grassTiles.push(spot);
               if (!occupiedTiles.has(key) && !reservedTiles.has(key)) {
@@ -215,9 +231,33 @@
           app.screen.height / townMap.length,
         );
         sprite.addChild(graphics);
+        const nameLabel = new Text({
+          text: appearance.username,
+          style: {
+            fontFamily: "Arial, sans-serif",
+            fontSize: labelFontSize,
+            fontWeight: "bold",
+            fill: "#ffffff",
+            stroke: {
+              fill: "#1b2b20",
+              width: Math.max(3, labelFontSize * 0.2),
+            },
+            dropShadow: {
+              color: "#000000",
+              alpha: 0.9,
+              blur: 2,
+              distance: 2,
+              angle: Math.PI / 2,
+            },
+          },
+          anchor: { x: 0.5, y: 1 },
+        });
+        nameLabel.y = -(tileSize * 1.55);
+        sprite.addChild(nameLabel);
         const character = {
           sprite,
           graphics,
+          nameLabel,
           appearance,
           tileSize,
           row: 0,
@@ -316,7 +356,7 @@
           for (let distance = 1; distance <= 3; distance += 1) {
             const row = character.row + step.row * distance;
             const column = character.column + step.column * distance;
-            if (row < 0 || row >= townMap.length) break;
+            if (row < 1 || row >= townMap.length) break;
 
             const tile = townMap[row][column];
             if (!tile || tile === "T") break;

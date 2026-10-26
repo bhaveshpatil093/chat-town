@@ -25,4 +25,6 @@ Use Node.js 20.12 or newer.
 
 The Express server serves static files from `public/`. WebSocket clients connect to the same port and receive every normalized event from the shared `eventBus` as JSON.
 
+The full-screen overlay is available at `/overlay.html`. Set `?labelSize=22` to override the responsive name-label size (valid values: `10`–`48`).
+
 With the server running, `npm run sim -- --type raid --viewers 40` sends a fake raid to connected clients. Running `npm run sim` without options sends one event of each type. The control page can generate events through `POST /api/sim`.
