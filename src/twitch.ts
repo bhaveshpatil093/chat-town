@@ -1,8 +1,30 @@
 import { ApiClient } from "@twurple/api";
-import type { RefreshingAuthProvider } from "@twurple/auth";
+import { InvalidTokenError, type RefreshingAuthProvider } from "@twurple/auth";
 import { EventSubWsListener } from "@twurple/eventsub-ws";
 import type { ChatTownEventMap, EventBus } from "./bus.js";
 import { sanitizeChatMessage } from "./chatSanitizer.js";
+import { recordTwitchEvent, setTwitchConnectionState } from "./twitchStatus.js";
+
+type RealTwitchEvent =
+  | ChatTownEventMap["chat"]
+  | ChatTownEventMap["follow"]
+  | ChatTownEventMap["sub"]
+  | ChatTownEventMap["bits"]
+  | ChatTownEventMap["raid"];
+
+function publishTwitchEvent(
+  bus: EventBus,
+  event: RealTwitchEvent,
+  summary: string,
+): void {
+  recordTwitchEvent({
+    type: event.type,
+    displayName: event.displayName,
+    timestamp: event.timestamp,
+    summary,
+  });
+  bus.emit(event);
+}
 
 export interface TwitchChatMessage {
   chatterId: string;
@@ -62,6 +84,21 @@ export async function startTwitchEventSub(
 
   const channelId = broadcaster.id;
   const listener = new EventSubWsListener({ apiClient });
+  const refreshFailureListener = authProvider.onRefreshFailure(
+    (userId, error) => {
+      if (
+        userId !== authenticatedUserId ||
+        !(error instanceof InvalidTokenError)
+      ) {
+        return;
+      }
+      setTwitchConnectionState("revoked", error.message);
+      console.error(
+        `[Chat Town] Twitch authorization is no longer valid for user ${userId}. Run npm run twitch:login, then restart Chat Town.`,
+      );
+      listener.stop();
+    },
+  );
   listener.onChannelChatMessage(channelId, authenticatedUserId, (event) => {
     if (
       isIgnoredTwitchAccount(
@@ -73,17 +110,21 @@ export async function startTwitchEventSub(
     ) {
       return;
     }
-    bus.emit(
-      normalizeTwitchChat(
-        {
-          chatterId: event.chatterId,
-          chatterName: event.chatterName,
-          chatterDisplayName: event.chatterDisplayName,
-          messageText: event.messageText,
-        },
-        options.blockedWords,
-      ),
+    const chat = normalizeTwitchChat(
+      {
+        chatterId: event.chatterId,
+        chatterName: event.chatterName,
+        chatterDisplayName: event.chatterDisplayName,
+        messageText: event.messageText,
+      },
+      options.blockedWords,
     );
+    const messageSummary = chat.blocked
+      ? "Message blocked by chat filter"
+      : chat.message.length > 90
+        ? `${chat.message.slice(0, 87)}…`
+        : chat.message;
+    publishTwitchEvent(bus, chat, messageSummary);
   });
   listener.onChannelFollow(channelId, authenticatedUserId, (event) => {
     if (
@@ -96,12 +137,16 @@ export async function startTwitchEventSub(
     ) {
       return;
     }
-    bus.emit({
-      type: "follow",
-      timestamp: event.followDate.getTime(),
-      userId: event.userId,
-      displayName: event.userDisplayName,
-    });
+    publishTwitchEvent(
+      bus,
+      {
+        type: "follow",
+        timestamp: event.followDate.getTime(),
+        userId: event.userId,
+        displayName: event.userDisplayName,
+      },
+      "Followed the channel",
+    );
   });
   listener.onChannelSubscription(channelId, (event) => {
     if (
@@ -114,13 +159,17 @@ export async function startTwitchEventSub(
     ) {
       return;
     }
-    bus.emit({
-      type: "sub",
-      timestamp: Date.now(),
-      userId: event.userId,
-      displayName: event.userDisplayName,
-      tier: event.tier,
-    });
+    publishTwitchEvent(
+      bus,
+      {
+        type: "sub",
+        timestamp: Date.now(),
+        userId: event.userId,
+        displayName: event.userDisplayName,
+        tier: event.tier,
+      },
+      `Tier ${event.tier} subscription`,
+    );
   });
   listener.onChannelCheer(channelId, (event) => {
     const userId = event.userId ?? "anonymous";
@@ -135,13 +184,17 @@ export async function startTwitchEventSub(
     ) {
       return;
     }
-    bus.emit({
-      type: "bits",
-      timestamp: Date.now(),
-      userId,
-      displayName,
-      amount: event.bits,
-    });
+    publishTwitchEvent(
+      bus,
+      {
+        type: "bits",
+        timestamp: Date.now(),
+        userId,
+        displayName,
+        amount: event.bits,
+      },
+      `${event.bits} Bits`,
+    );
   });
   listener.onChannelRaidTo(channelId, (event) => {
     if (
@@ -154,18 +207,51 @@ export async function startTwitchEventSub(
     ) {
       return;
     }
-    bus.emit({
-      type: "raid",
-      timestamp: Date.now(),
-      userId: event.raidingBroadcasterId,
-      displayName: event.raidingBroadcasterDisplayName,
-      viewerCount: event.viewers,
-    });
+    publishTwitchEvent(
+      bus,
+      {
+        type: "raid",
+        timestamp: Date.now(),
+        userId: event.raidingBroadcasterId,
+        displayName: event.raidingBroadcasterDisplayName,
+        viewerCount: event.viewers,
+      },
+      `Incoming raid with ${event.viewers} viewers`,
+    );
+  });
+
+  listener.onUserSocketConnect((userId) => {
+    console.info(`[Chat Town] Twitch WebSocket connected for user ${userId}.`);
+  });
+  listener.onUserSocketReady((userId) => {
+    setTwitchConnectionState("connected");
+    console.info(
+      `[Chat Town] Twitch EventSub ready for user ${userId}; subscriptions are active.`,
+    );
+  });
+  listener.onUserSocketDisconnect((userId, error) => {
+    if (listener.isActive) setTwitchConnectionState("reconnecting");
+    const detail = error?.message ?? "Connection closed";
+    console.warn(
+      `[Chat Town] Twitch WebSocket disconnected for user ${userId}: ${detail}. Twurple will reconnect and restore subscriptions.`,
+    );
+  });
+  listener.onRevoke((subscription, status) => {
+    const detail = `EventSub subscription ${subscription.id} was revoked (${status}).`;
+    const connectionState =
+      status === "authorization_revoked" ? "revoked" : "error";
+    setTwitchConnectionState(connectionState, detail);
+    console.error(`[Chat Town] ${detail}`);
+    if (connectionState === "revoked") listener.stop();
   });
 
   listener.start();
+  setTwitchConnectionState("connecting");
   console.info(
     `[Chat Town] Twitch EventSub listening for ${broadcaster.displayName} (channel ${channelId}; moderator ${authenticatedUserId}).`,
   );
-  return () => listener.stop();
+  return () => {
+    listener.stop();
+    refreshFailureListener.unbind();
+  };
 }

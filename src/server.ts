@@ -10,6 +10,11 @@ import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 import { initializeTwitchAuth } from "./twitchAuth.js";
 import { startTwitchEventSub } from "./twitch.js";
+import {
+  configureTwitchStatus,
+  getTwitchStatus,
+  setTwitchConnectionState,
+} from "./twitchStatus.js";
 
 export const DEFAULT_PORT = config.port;
 export const eventBus = new EventBus();
@@ -28,8 +33,21 @@ export function createChatTownServer(
   bus = eventBus,
   publicDirectory = PUBLIC_DIRECTORY,
 ): ChatTownServer {
+  configureTwitchStatus(config.twitchEnabled, config.twitchChannel);
   const app = express();
   app.use(express.json());
+
+  app.get("/health", (_request, response) => {
+    response.status(200).json({
+      status: "ok",
+      twitchEnabled: config.twitchEnabled,
+      twitchConnection: getTwitchStatus().connectionState,
+    });
+  });
+
+  app.get("/api/twitch/status", (_request, response) => {
+    response.status(200).json(getTwitchStatus());
+  });
 
   app.post("/api/sim", (request, response) => {
     const simulation = parseSimulationRequest(request.body);
@@ -110,7 +128,14 @@ export function startChatTownServer(
   };
   server.httpServer.listen(port, () => {
     console.log(`Chat Town server listening on port ${port}`);
+    if (!config.twitchEnabled) {
+      console.info(
+        "[Chat Town] Simulator-only mode is enabled. Twitch credentials are not required.",
+      );
+      return;
+    }
     if (!config.twitchChannel) {
+      setTwitchConnectionState("not_configured");
       console.info(
         "[Chat Town] Twitch events are disabled. Set TWITCH_CHANNEL to enable them.",
       );
@@ -118,7 +143,13 @@ export function startChatTownServer(
     }
     void initializeTwitchAuth()
       .then((auth) => {
-        if (!auth || serverClosed) return;
+        if (!auth) {
+          if (getTwitchStatus().connectionState === "connecting") {
+            setTwitchConnectionState("auth_required");
+          }
+          return;
+        }
+        if (serverClosed) return;
         return startTwitchEventSub(bus, auth.provider, auth.userId, {
           channel: config.twitchChannel as string,
           botAccounts: config.twitchBotAccounts,
@@ -130,6 +161,7 @@ export function startChatTownServer(
       })
       .catch((error: unknown) => {
         const detail = error instanceof Error ? error.message : String(error);
+        setTwitchConnectionState("error", detail);
         console.error(`[Chat Town] Twitch EventSub failed to start: ${detail}`);
       });
   });

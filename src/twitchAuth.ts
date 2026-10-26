@@ -4,10 +4,12 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { z } from "zod";
 import {
+  InvalidTokenError,
   RefreshingAuthProvider,
   type AccessToken,
   type AccessTokenWithUserId,
 } from "@twurple/auth";
+import { setTwitchConnectionState } from "./twitchStatus.js";
 
 export const TWITCH_CHAT_INTENT = "chat";
 export const REQUIRED_TWITCH_SCOPES = [
@@ -145,6 +147,9 @@ export function createRefreshingAuthProvider(
     await saveTwitchToken({ userId, ...token }, tokenPath);
   });
   provider.onRefreshFailure((userId, error) => {
+    const connectionState =
+      error instanceof InvalidTokenError ? "revoked" : "error";
+    setTwitchConnectionState(connectionState, error.message);
     console.error(
       `[Chat Town] Twitch token refresh failed for user ${userId}: ${error.message}`,
     );
@@ -174,7 +179,10 @@ export async function initializeTwitchAuth(): Promise<{
   provider: RefreshingAuthProvider;
   userId: string;
 } | null> {
-  if (!existsSync(TWITCH_TOKEN_PATH)) return null;
+  if (!existsSync(TWITCH_TOKEN_PATH)) {
+    setTwitchConnectionState("auth_required", "Run npm run twitch:login.");
+    return null;
+  }
   try {
     const auth = await loadRefreshingAuthProvider();
     const { provider, userId } = auth;
@@ -183,6 +191,10 @@ export async function initializeTwitchAuth(): Promise<{
     return auth;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
+    setTwitchConnectionState(
+      error instanceof InvalidTokenError ? "revoked" : "error",
+      detail,
+    );
     console.error(`[Chat Town] Could not initialize Twitch auth: ${detail}`);
     return null;
   }

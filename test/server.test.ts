@@ -22,6 +22,24 @@ describe("Chat Town server", () => {
     expect(await response.text()).toContain("<h1>Chat Town</h1>");
   });
 
+  it("reports application health and Twitch connection status", async () => {
+    chatTownServer = createChatTownServer();
+    await listen(chatTownServer);
+
+    const health = await fetch(`${serverUrl(chatTownServer)}health`);
+    const twitchStatus = await fetch(
+      `${serverUrl(chatTownServer)}api/twitch/status`,
+    );
+
+    expect(health.status).toBe(200);
+    expect(await health.json()).toMatchObject({ status: "ok" });
+    expect(twitchStatus.status).toBe(200);
+    expect(await twitchStatus.json()).toMatchObject({
+      connectionState: expect.any(String),
+      recentEvents: [],
+    });
+  });
+
   it("broadcasts every normalized event to connected clients as JSON", async () => {
     const bus = new EventBus();
     chatTownServer = createChatTownServer(bus);

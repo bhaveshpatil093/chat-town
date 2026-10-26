@@ -183,6 +183,56 @@
         white-space: pre-wrap;
         overflow-wrap: anywhere;
       }
+      .twitch-state {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 1px solid #405448;
+        border-radius: 999px;
+        padding: 7px 11px;
+        color: #c8d5c8;
+        font-size: 0.85rem;
+      }
+      .twitch-state::before {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: #899c8c;
+        content: "";
+      }
+      .twitch-state[data-state="connected"]::before {
+        background: #a4d17b;
+        box-shadow: 0 0 10px rgb(164 209 123 / 55%);
+      }
+      .twitch-state[data-state="error"]::before,
+      .twitch-state[data-state="revoked"]::before {
+        background: #ff9e8e;
+      }
+      .twitch-meta {
+        margin: 12px 0;
+        color: #aebcaf;
+        font-size: 0.88rem;
+      }
+      #twitch-events {
+        display: grid;
+        gap: 8px;
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      #twitch-events li {
+        display: grid;
+        grid-template-columns: minmax(115px, 145px) 1fr;
+        gap: 10px;
+        border-top: 1px solid #34463a;
+        padding-top: 9px;
+        color: #c8d5c8;
+        font-size: 0.82rem;
+      }
+      #twitch-events time {
+        color: #899c8c;
+        font-variant-numeric: tabular-nums;
+      }
       @media (max-width: 560px) {
         .fields,
         .buttons {
@@ -273,11 +323,74 @@ Hello, town!</textarea>
         <p id="status" role="status" aria-live="polite"></p>
         <pre id="result" hidden></pre>
       </section>
+      <section aria-labelledby="twitch-heading">
+        <h2 id="twitch-heading">Twitch connection</h2>
+        <span id="twitch-state" class="twitch-state" data-state="connecting"
+          >Checking status</span
+        >
+        <p id="twitch-channel" class="twitch-meta">Channel: —</p>
+        <p id="twitch-error" class="hint" aria-live="polite"></p>
+        <h2 class="scene-heading">Recent live events</h2>
+        <p id="twitch-empty" class="hint">No Twitch events received yet.</p>
+        <ul id="twitch-events" aria-live="polite"></ul>
+      </section>
     </main>
     <script type="module">
       const buttons = [...document.querySelectorAll("[data-type]")];
       const status = document.querySelector("#status");
       const result = document.querySelector("#result");
+
+      const stateLabels = {
+        disabled: "Simulator-only mode",
+        not_configured: "Channel not configured",
+        auth_required: "Twitch login required",
+        connecting: "Connecting",
+        connected: "Connected",
+        reconnecting: "Reconnecting",
+        error: "Connection error",
+        revoked: "Authorization revoked",
+      };
+
+      async function refreshTwitchStatus() {
+        try {
+          const response = await fetch("/api/twitch/status", {
+            cache: "no-store",
+          });
+          if (!response.ok) throw new Error("Could not load Twitch status.");
+          const data = await response.json();
+          const state = document.querySelector("#twitch-state");
+          state.dataset.state = data.connectionState;
+          state.textContent =
+            stateLabels[data.connectionState] ?? data.connectionState;
+          document.querySelector("#twitch-channel").textContent =
+            `Channel: ${data.channel ?? "—"}`;
+          document.querySelector("#twitch-error").textContent =
+            data.lastError ?? "";
+          const events = document.querySelector("#twitch-events");
+          events.replaceChildren();
+          document.querySelector("#twitch-empty").hidden =
+            data.recentEvents.length > 0;
+          for (const event of data.recentEvents) {
+            const item = document.createElement("li");
+            const time = document.createElement("time");
+            time.dateTime = new Date(event.timestamp).toISOString();
+            time.textContent = new Date(event.timestamp).toLocaleTimeString();
+            const description = document.createElement("span");
+            description.textContent = `${event.displayName} · ${event.type}: ${event.summary}`;
+            item.append(time, description);
+            events.append(item);
+          }
+        } catch (error) {
+          const state = document.querySelector("#twitch-state");
+          state.dataset.state = "error";
+          state.textContent = "Status unavailable";
+          document.querySelector("#twitch-error").textContent =
+            error instanceof Error ? error.message : "Could not load status.";
+        }
+      }
+
+      void refreshTwitchStatus();
+      window.setInterval(refreshTwitchStatus, 2500);
 
       for (const button of buttons) {
         button.addEventListener("click", async () => {

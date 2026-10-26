@@ -20,6 +20,15 @@ const configSchema = z.object({
     if (typeof value === "string") return Number(value);
     return value;
   }, z.number().int().min(1).max(65_535)),
+  TWITCH_ENABLED: z.preprocess((value: unknown) => {
+    if (value === undefined) return false;
+    if (typeof value === "string") {
+      const normalized = value.trim().toLocaleLowerCase();
+      if (normalized === "true") return true;
+      if (normalized === "false") return false;
+    }
+    return value;
+  }, z.boolean()),
   CHAT_BLOCKED_WORDS: z.string().optional().default(""),
   TWITCH_CHANNEL: z.string().trim().optional().default(""),
   TWITCH_BOT_ACCOUNTS: z.string().optional().default(""),
@@ -27,6 +36,7 @@ const configSchema = z.object({
 
 export interface AppConfig {
   port: number;
+  twitchEnabled: boolean;
   blockedWords: string[];
   twitchChannel: string | null;
   twitchBotAccounts: string[];
@@ -38,9 +48,14 @@ export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
     const invalidPort = result.error.issues.some(
       (issue) => issue.path[0] === "PORT",
     );
+    const invalidTwitchEnabled = result.error.issues.some(
+      (issue) => issue.path[0] === "TWITCH_ENABLED",
+    );
     const detail = invalidPort
       ? "PORT must be an integer from 1 to 65535."
-      : result.error.issues.map((issue) => issue.message).join("; ");
+      : invalidTwitchEnabled
+        ? "TWITCH_ENABLED must be true or false."
+        : result.error.issues.map((issue) => issue.message).join("; ");
     throw new Error(
       `Invalid environment configuration: ${detail} Check .env or copy .env.example to .env.`,
     );
@@ -54,6 +69,7 @@ export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
     .filter(Boolean);
   return {
     port: result.data.PORT,
+    twitchEnabled: result.data.TWITCH_ENABLED,
     blockedWords,
     twitchChannel: result.data.TWITCH_CHANNEL || null,
     twitchBotAccounts,
