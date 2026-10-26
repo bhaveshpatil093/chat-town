@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chat Town Overlay</title>
+    <style>
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      import { Application } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
+
+      const app = new Application();
+      await app.init({
+        resizeTo: window,
+        autoDensity: true,
+        resolution: window.devicePixelRatio || 1,
+        backgroundAlpha: 0,
+      });
+      app.renderer.background.alpha = 0;
+      document.body.appendChild(app.canvas);
+
+      const initialReconnectDelayMs = 500;
+      const maximumReconnectDelayMs = 30_000;
+      let reconnectAttempts = 0;
+
+      function connect() {
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socket = new WebSocket(`${protocol}//${window.location.host}`);
+
+        socket.addEventListener("open", () => {
+          reconnectAttempts = 0;
+          console.info("[Chat Town overlay] WebSocket connected");
+        });
+
+        socket.addEventListener("message", (message) => {
+          try {
+            console.log("[Chat Town overlay] event", JSON.parse(message.data));
+          } catch (error) {
+            console.warn("[Chat Town overlay] received invalid JSON", error);
+          }
+        });
+
+        socket.addEventListener("close", () => {
+          const delay = Math.min(
+            initialReconnectDelayMs * 2 ** reconnectAttempts,
+            maximumReconnectDelayMs,
+          );
+          reconnectAttempts = Math.min(reconnectAttempts + 1, 10);
+          console.warn(`[Chat Town overlay] reconnecting in ${delay}ms`);
+          window.setTimeout(connect, delay);
+        });
+
+        socket.addEventListener("error", (error) => {
+          console.error("[Chat Town overlay] WebSocket error", error);
+          socket.close();
+        });
+      }
+
+      connect();
+    </script>
+  </body>
+</html>
