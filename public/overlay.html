@@ -25,6 +25,7 @@
     <script type="module">
       import {
         Application,
+        Container,
         Graphics,
       } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
 
@@ -55,6 +56,7 @@
         p: ["#c59a62", "#d2a96e"],
       };
       const townGraphics = new Graphics();
+      const characters = new Map();
       app.stage.addChild(townGraphics);
 
       function drawTownMap() {
@@ -103,10 +105,162 @@
             townGraphics.rect(x, y, tileWidth + 1, tileHeight + 1).fill(color);
           });
         });
+
+        for (const character of characters.values()) {
+          character.sprite.x = (character.column + 0.5) * tileWidth;
+          character.sprite.y = (character.row + 1) * tileHeight;
+          character.sprite.scale.set(
+            Math.min(tileWidth, tileHeight) / character.tileSize,
+          );
+        }
       }
 
       drawTownMap();
       window.addEventListener("resize", drawTownMap);
+
+      const skinColors = ["#f2c49b", "#d99a6c", "#b97850", "#80513f"];
+      const hairColors = [
+        "#30252b",
+        "#59382e",
+        "#d49a42",
+        "#b94e3f",
+        "#e5d9bb",
+      ];
+      const hairStyles = ["short", "long", "bob", "spiky"];
+      const outfits = [
+        { shirt: "#d95d52", pants: "#384b7a" },
+        { shirt: "#4d88b8", pants: "#574477" },
+        { shirt: "#e0b84c", pants: "#487358" },
+        { shirt: "#9a68a8", pants: "#54404b" },
+        { shirt: "#e58c52", pants: "#426a72" },
+      ];
+      const occupiedTiles = new Set();
+
+      function spawnCharacter(username, userId = username) {
+        const normalizedUsername = username.trim().toLowerCase();
+        const identity = userId.trim() || normalizedUsername;
+        if (!normalizedUsername || characters.has(identity)) return;
+
+        const spawnTile = chooseSpawnTile();
+        if (!spawnTile) return;
+
+        const random = createSeededRandom(hashUsername(normalizedUsername));
+        const appearance = {
+          skinColor: choose(skinColors, random),
+          hairColor: choose(hairColors, random),
+          hairStyle: choose(hairStyles, random),
+          outfit: choose(outfits, random),
+        };
+        const sprite = drawCharacter(appearance);
+        const tileSize = Math.min(
+          app.screen.width / townMap[0].length,
+          app.screen.height / townMap.length,
+        );
+        sprite.x =
+          (spawnTile.column + 0.5) * (app.screen.width / townMap[0].length);
+        sprite.y = (spawnTile.row + 1) * (app.screen.height / townMap.length);
+        app.stage.addChild(sprite);
+        characters.set(identity, { ...spawnTile, sprite, tileSize });
+      }
+
+      function chooseSpawnTile() {
+        const grassTiles = [];
+        const availableTiles = [];
+        townMap.forEach((row, rowIndex) => {
+          [...row].forEach((tile, columnIndex) => {
+            const key = `${rowIndex}:${columnIndex}`;
+            if (tile === "g") {
+              const spot = { row: rowIndex, column: columnIndex, key };
+              grassTiles.push(spot);
+              if (!occupiedTiles.has(key)) availableTiles.push(spot);
+            }
+          });
+        });
+
+        const spawnOptions = availableTiles.length
+          ? availableTiles
+          : grassTiles;
+        if (spawnOptions.length === 0) return null;
+        const tile = choose(spawnOptions, Math.random);
+        occupiedTiles.add(tile.key);
+        return tile;
+      }
+
+      function drawCharacter({ skinColor, hairColor, hairStyle, outfit }) {
+        const graphics = new Graphics();
+        const sprite = new Container();
+        const tileSize = Math.min(
+          app.screen.width / townMap[0].length,
+          app.screen.height / townMap.length,
+        );
+        const pixel = tileSize / 8;
+        const pixelRect = (x, y, width, height, color) => {
+          graphics
+            .rect(
+              (x - 4) * pixel,
+              (y - 12) * pixel,
+              width * pixel,
+              height * pixel,
+            )
+            .fill(color);
+        };
+
+        if (hairStyle === "long" || hairStyle === "bob") {
+          pixelRect(1, 1, 6, 6, hairColor);
+        }
+        pixelRect(2, 1, 4, 4, skinColor);
+
+        if (hairStyle === "spiky") {
+          pixelRect(1, 1, 2, 1, hairColor);
+          pixelRect(2, 0, 2, 2, hairColor);
+          pixelRect(4, 1, 2, 1, hairColor);
+          pixelRect(6, 1, 1, 2, hairColor);
+        } else {
+          pixelRect(1, 0, 6, 2, hairColor);
+          if (hairStyle === "short") {
+            pixelRect(1, 1, 1, 2, hairColor);
+            pixelRect(6, 1, 1, 2, hairColor);
+          } else {
+            pixelRect(1, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
+            pixelRect(6, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
+          }
+        }
+
+        pixelRect(3, 3, 1, 1, "#302a32");
+        pixelRect(5, 3, 1, 1, "#302a32");
+        pixelRect(1, 5, 6, 4, outfit.shirt);
+        pixelRect(0, 5, 1, 3, skinColor);
+        pixelRect(7, 5, 1, 3, skinColor);
+        pixelRect(2, 9, 4, 2, outfit.pants);
+        pixelRect(1, 11, 2, 1, "#40333a");
+        pixelRect(5, 11, 2, 1, "#40333a");
+
+        sprite.addChild(graphics);
+        return sprite;
+      }
+
+      function hashUsername(username) {
+        let hash = 2_166_136_261;
+        for (let index = 0; index < username.length; index += 1) {
+          hash ^= username.charCodeAt(index);
+          hash = Math.imul(hash, 16_777_619);
+        }
+        return hash >>> 0;
+      }
+
+      function createSeededRandom(seed) {
+        let state = seed || 1;
+        return () => {
+          state ^= state << 13;
+          state ^= state >>> 17;
+          state ^= state << 5;
+          return (state >>> 0) / 4_294_967_296;
+        };
+      }
+
+      function choose(values, random) {
+        return values[Math.floor(random() * values.length)];
+      }
 
       const initialReconnectDelayMs = 500;
       const maximumReconnectDelayMs = 30_000;
@@ -123,7 +277,18 @@
 
         socket.addEventListener("message", (message) => {
           try {
-            console.log("[Chat Town overlay] event", JSON.parse(message.data));
+            const event = JSON.parse(message.data);
+            console.log("[Chat Town overlay] event", event);
+            if (
+              event.type === "chat" &&
+              typeof event.displayName === "string"
+            ) {
+              const userId =
+                typeof event.userId === "string"
+                  ? event.userId
+                  : event.displayName;
+              spawnCharacter(event.displayName, userId);
+            }
           } catch (error) {
             console.warn("[Chat Town overlay] received invalid JSON", error);
           }
