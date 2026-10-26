@@ -7,7 +7,14 @@ import {
   type SimulatableEventType,
 } from "./bus.js";
 
-export type SimulationType = SimulatableEventType | "all" | "day" | "night";
+export type SimulationType =
+  | SimulatableEventType
+  | "all"
+  | "day"
+  | "night"
+  | "panic"
+  | "restore"
+  | "remove-character";
 
 export interface SimulationRequest {
   type: SimulationType;
@@ -45,7 +52,6 @@ export function parseSimulationRequest(
   ) {
     return null;
   }
-
   const viewers = body.viewers;
   if (
     viewers !== undefined &&
@@ -66,6 +72,7 @@ export function parseSimulationRequest(
   ) {
     return null;
   }
+  if (type === "remove-character" && username === undefined) return null;
   const message = body.message;
   if (
     message !== undefined &&
@@ -87,6 +94,7 @@ export function parseSimulationRequest(
 export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
   let type: SimulationType = "all";
   let viewers: number | undefined;
+  let username: string | undefined;
   let url = `http://127.0.0.1:${config.port}`;
 
   for (let index = 0; index < args.length; index += 1) {
@@ -111,6 +119,12 @@ export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
       }
       viewers = parsedViewers;
       index += 1;
+    } else if (option === "--username") {
+      if (!value || value.trim().length > 25) {
+        throw new Error("--username must contain 1 to 25 characters");
+      }
+      username = value.trim();
+      index += 1;
     } else if (option === "--url") {
       if (!value) throw new Error("--url requires a server URL");
       const parsedUrl = new URL(value);
@@ -124,7 +138,12 @@ export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
     }
   }
 
-  return { type, ...(viewers === undefined ? {} : { viewers }), url };
+  return {
+    type,
+    ...(viewers === undefined ? {} : { viewers }),
+    ...(username === undefined ? {} : { username }),
+    url,
+  };
 }
 
 export function generateFakeEvents(
@@ -149,6 +168,16 @@ export function generateFakeEvents(
       case "day":
       case "night":
         return { type: "scene", timestamp, scene: type };
+      case "panic":
+      case "restore":
+        return { type: "control", timestamp, command: type };
+      case "remove-character":
+        return {
+          type: "control",
+          timestamp,
+          command: type,
+          displayName: request.username ?? "TownGuest",
+        };
       case "chat":
         return {
           type,
@@ -194,7 +223,7 @@ export function generateFakeEvents(
 async function runCli(args: string[]): Promise<void> {
   if (args.includes("--help")) {
     console.log(
-      "Usage: npm run sim -- [--type all|chat|follow|sub|bits|raid|levelup|day|night] [--viewers count] [--url server-url]",
+      "Usage: npm run sim -- [--type all|chat|follow|sub|bits|raid|levelup|day|night|panic|restore|remove-character] [--viewers count] [--username name] [--url server-url]",
     );
     return;
   }
@@ -226,10 +255,19 @@ function randomInteger(min: number, max: number, random: () => number): number {
 
 function isSimulationControlType(
   value: string,
-): value is SimulatableEventType | "day" | "night" {
+): value is
+  | SimulatableEventType
+  | "day"
+  | "night"
+  | "panic"
+  | "restore"
+  | "remove-character" {
   return (
     value === "day" ||
     value === "night" ||
+    value === "panic" ||
+    value === "restore" ||
+    value === "remove-character" ||
     SIMULATABLE_EVENT_TYPES.some((type) => type === value)
   );
 }

@@ -145,6 +145,10 @@
         opacity: 0.6;
         transform: none;
       }
+      .panic-button:hover {
+        border-color: #ff9e8e;
+        background: #71362d;
+      }
       .raid-row {
         display: flex;
         align-items: center;
@@ -251,6 +255,21 @@ Hello, town!</textarea>
           <button type="button" data-type="day">Set day</button>
           <button type="button" data-type="night">Set night</button>
         </div>
+        <h2 class="scene-heading">Overlay controls</h2>
+        <div class="buttons" aria-label="Overlay safety controls">
+          <button class="panic-button" type="button" data-type="panic">
+            Panic · blank overlay
+          </button>
+          <button type="button" data-type="restore" hidden>
+            Restore overlay
+          </button>
+          <button type="button" data-type="remove-character">
+            Remove character
+          </button>
+        </div>
+        <span class="hint"
+          >Remove the character matching the username above.</span
+        >
         <p id="status" role="status" aria-live="polite"></p>
         <pre id="result" hidden></pre>
       </section>
@@ -284,6 +303,13 @@ Hello, town!</textarea>
             const data = await response.json();
             if (!response.ok)
               throw new Error(data.error ?? response.statusText);
+            if (type === "panic") {
+              document.querySelector('[data-type="panic"]').hidden = true;
+              document.querySelector('[data-type="restore"]').hidden = false;
+            } else if (type === "restore") {
+              document.querySelector('[data-type="panic"]').hidden = false;
+              document.querySelector('[data-type="restore"]').hidden = true;
+            }
             status.textContent = `${type[0].toUpperCase()}${type.slice(1)} event sent.`;
             result.textContent = JSON.stringify(data.events, null, 2);
             result.hidden = false;

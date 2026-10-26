@@ -20,10 +20,12 @@ const configSchema = z.object({
     if (typeof value === "string") return Number(value);
     return value;
   }, z.number().int().min(1).max(65_535)),
+  CHAT_BLOCKED_WORDS: z.string().optional().default(""),
 });
 
 export interface AppConfig {
   port: number;
+  blockedWords: string[];
 }
 
 export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
@@ -40,7 +42,10 @@ export function parseConfig(environment: NodeJS.ProcessEnv): AppConfig {
     );
   }
 
-  return { port: result.data.PORT };
+  const blockedWords = result.data.CHAT_BLOCKED_WORDS.split(",")
+    .map((word) => word.trim())
+    .filter(Boolean);
+  return { port: result.data.PORT, blockedWords };
 }
 
 export const config = parseConfig(process.env);

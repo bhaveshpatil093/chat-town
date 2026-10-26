@@ -9,12 +9,18 @@ interface BaseEvent<T extends string> {
 }
 
 export interface ChatTownEventMap {
-  chat: BaseEvent<"chat"> & UserIdentity & { message: string };
+  chat: BaseEvent<"chat"> &
+    UserIdentity & { message: string; blocked?: boolean };
   action: BaseEvent<"action"> &
     UserIdentity & {
       action: "dance" | "jump" | "wave" | "sit";
     };
   scene: BaseEvent<"scene"> & { scene: "day" | "night" };
+  control: BaseEvent<"control"> &
+    (
+      | { command: "panic" | "restore" }
+      | { command: "remove-character"; displayName: string }
+    );
   follow: BaseEvent<"follow"> & UserIdentity;
   sub: BaseEvent<"sub"> & UserIdentity & { tier: string; months?: number };
   bits: BaseEvent<"bits"> & UserIdentity & { amount: number };
@@ -25,12 +31,13 @@ export interface ChatTownEventMap {
 export type ChatTownEventType = keyof ChatTownEventMap;
 export type SimulatableEventType = Exclude<
   ChatTownEventType,
-  "action" | "scene"
+  "action" | "scene" | "control"
 >;
 export const CHAT_TOWN_EVENT_TYPES = [
   "chat",
   "action",
   "scene",
+  "control",
   "follow",
   "sub",
   "bits",

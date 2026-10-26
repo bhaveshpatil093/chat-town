@@ -3,11 +3,21 @@ import { parseConfig } from "../src/config.js";
 
 describe("parseConfig", () => {
   it("uses the default port when PORT is not set", () => {
-    expect(parseConfig({})).toEqual({ port: 3000 });
+    expect(parseConfig({})).toEqual({ port: 3000, blockedWords: [] });
   });
 
   it("parses a valid port", () => {
-    expect(parseConfig({ PORT: "4321" })).toEqual({ port: 4321 });
+    expect(parseConfig({ PORT: "4321" })).toEqual({
+      port: 4321,
+      blockedWords: [],
+    });
+  });
+
+  it("parses a comma-separated blocked word list", () => {
+    expect(parseConfig({ CHAT_BLOCKED_WORDS: "spam, bad phrase ,," })).toEqual({
+      port: 3000,
+      blockedWords: ["spam", "bad phrase"],
+    });
   });
 
   it("provides a clear error when PORT is invalid", () => {

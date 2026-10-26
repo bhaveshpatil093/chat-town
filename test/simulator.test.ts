@@ -45,6 +45,21 @@ describe("simulator", () => {
     ).toBeNull();
   });
 
+  it("validates and creates panic, restore, and character removal controls", () => {
+    expect(generateFakeEvents({ type: "panic" })).toMatchObject([
+      { type: "control", command: "panic" },
+    ]);
+    expect(
+      generateFakeEvents({ type: "remove-character", username: "Townie" }),
+    ).toMatchObject([
+      { type: "control", command: "remove-character", displayName: "Townie" },
+    ]);
+    expect(parseSimulationRequest({ type: "remove-character" })).toBeNull();
+    expect(parseSimulationRequest({ type: "restore" })).toEqual({
+      type: "restore",
+    });
+  });
+
   it("validates simulation API input", () => {
     expect(parseSimulationRequest({ type: "raid", viewers: 40 })).toEqual({
       type: "raid",

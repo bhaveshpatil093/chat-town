@@ -106,6 +106,35 @@ describe("Chat Town server", () => {
     expect(JSON.parse(payload.toString())).toEqual(events[0]);
   });
 
+  it("sanitizes chat before returning and broadcasting the event", async () => {
+    const bus = new EventBus();
+    chatTownServer = createChatTownServer(bus);
+    await listen(chatTownServer);
+
+    const client = new WebSocket(webSocketUrl(chatTownServer));
+    await once(client, "open");
+    const messageReceived = once(client, "message");
+    const response = await fetch(`${serverUrl(chatTownServer)}api/sim`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        type: "chat",
+        username: "Townie",
+        message: "Hello\u0000 town https://example.com/stream",
+      }),
+    });
+    const { events } = (await response.json()) as {
+      events: ChatTownEvent[];
+    };
+    const [payload] = await messageReceived;
+
+    expect(events[0]).toMatchObject({ type: "chat", message: "Hello town" });
+    expect(JSON.parse(payload.toString())).toMatchObject({
+      type: "chat",
+      message: "Hello town",
+    });
+  });
+
   it("rejects invalid simulation requests", async () => {
     chatTownServer = createChatTownServer();
     await listen(chatTownServer);
