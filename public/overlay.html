@@ -74,6 +74,9 @@
         disperseMs: 500,
       };
       const MAX_RAID_MARCHERS = 60;
+      const MAX_EFFECT_PARTICLES = 96;
+      const MAX_LEVELUP_CELEBRATIONS = 5;
+      const NAME_LABEL_REFRESH_MS = 200;
       const characterIdleMinutes = readIntegerParameter(
         "idleMinutes",
         10,
@@ -345,6 +348,7 @@
       const characters = new Map();
       const viewerProfiles = new Map();
       const characterPool = [];
+      const characterTextureCache = new Map();
       const effectQueue = [];
       const levelupCelebrations = [];
       let activeEffect = null;
@@ -362,6 +366,7 @@
       let nightDecorationsUpdateMs = 0;
       let lastHouseLightingLevel = 0;
       let fireflyElapsedMs = 0;
+      let lastNameLabelFlush = 0;
       app.stage.addChild(
         townGraphics,
         townTileLayer,
@@ -518,6 +523,7 @@
           const tileSize = Math.min(tileWidth, tileHeight);
           drawCharacterShadow(character.shadowGraphics, tileSize);
           character.tileSize = tileSize;
+          character.graphics.scale.set(tileSize / 16);
           renderCharacter(character);
           character.nameLabel.y = -(tileSize * 1.55);
           character.baseX = (character.column + 0.5) * tileWidth;
@@ -979,7 +985,7 @@
         const character = characters.get(userId);
         if (character) {
           Object.assign(character.appearance, current);
-          character.nameLabel.style.fill = current.nameplateColor;
+          queueNameLabelUpdate(character, false);
           renderCharacter(character);
         }
         upgradeViewerHouses(userId, current.houseStyle);
@@ -1078,11 +1084,12 @@
           app.screen.height / townMap.length,
         );
         drawCharacterShadow(shadowGraphics, tileSize);
-        nameLabel.text = appearance.username;
-        nameLabel.style.fill = appearance.nameplateColor ?? "#ffffff";
+        character.appearance = appearance;
+        character.pendingNameLabel = null;
+        queueNameLabelUpdate(character, true);
         nameLabel.y = -(tileSize * 1.55);
         nameLabel.visible = true;
-        graphics.scale.set(1);
+        graphics.scale.set(tileSize / 16);
         graphics.rotation = 0;
         graphics.y = 0;
         Object.assign(character, {
@@ -1112,7 +1119,8 @@
       }
 
       function createCharacterSprite() {
-        const graphics = new Graphics();
+        const graphics = new Sprite(Texture.EMPTY);
+        graphics.anchor.set(0.5, 1);
         const shadowGraphics = new Graphics();
         const sprite = new Container();
         const nameLabel = new Text({
@@ -1155,90 +1163,155 @@
 
       function renderCharacter(character) {
         const { graphics, appearance, direction } = character;
-        const { skinColor, hairColor, hairStyle, outfit, hat, nameplateColor } =
-          appearance;
-        const pixel = character.tileSize / 8;
+        const { skinColor, hairColor, hairStyle, outfit, hat } = appearance;
+        const pixel = 2;
         const walking = character.state === "walking";
         const frame = walking ? character.animationFrame : 0;
         const sideFacing = direction === "left" || direction === "right";
         const stride = walking && frame === 0 ? 1 : walking ? -1 : 0;
-        const pixelRect = (x, y, width, height, color) => {
-          graphics
-            .rect(
-              (x - 4) * pixel,
-              (y - 12) * pixel,
-              width * pixel,
-              height * pixel,
-            )
-            .fill(color);
-        };
+        const textureKey = [
+          skinColor,
+          hairColor,
+          hairStyle,
+          outfit.shirt,
+          outfit.pants,
+          hat,
+          direction,
+          frame,
+          character.action === "wave",
+        ].join("|");
+        let texture = characterTextureCache.get(textureKey);
+        if (!texture) {
+          const drawing = new Graphics();
+          const pixelRect = (x, y, width, height, color) => {
+            drawing
+              .rect(
+                (x - 4) * pixel,
+                (y - 12) * pixel,
+                width * pixel,
+                height * pixel,
+              )
+              .fill(color);
+          };
 
-        graphics.clear();
-        if (hairStyle === "long" || hairStyle === "bob") {
-          pixelRect(1, 1, 6, 6, hairColor);
-        }
-        pixelRect(2, 1, 4, 4, skinColor);
+          if (hairStyle === "long" || hairStyle === "bob") {
+            pixelRect(1, 1, 6, 6, hairColor);
+          }
+          pixelRect(2, 1, 4, 4, skinColor);
 
-        if (hairStyle === "spiky") {
-          pixelRect(1, 1, 2, 1, hairColor);
-          pixelRect(2, 0, 2, 2, hairColor);
-          pixelRect(4, 1, 2, 1, hairColor);
-          pixelRect(6, 1, 1, 2, hairColor);
-        } else {
-          pixelRect(1, 0, 6, 2, hairColor);
-          if (hairStyle === "short") {
-            pixelRect(1, 1, 1, 2, hairColor);
+          if (hairStyle === "spiky") {
+            pixelRect(1, 1, 2, 1, hairColor);
+            pixelRect(2, 0, 2, 2, hairColor);
+            pixelRect(4, 1, 2, 1, hairColor);
             pixelRect(6, 1, 1, 2, hairColor);
           } else {
-            pixelRect(1, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
-            pixelRect(6, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
+            pixelRect(1, 0, 6, 2, hairColor);
+            if (hairStyle === "short") {
+              pixelRect(1, 1, 1, 2, hairColor);
+              pixelRect(6, 1, 1, 2, hairColor);
+            } else {
+              pixelRect(1, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
+              pixelRect(6, 1, 1, hairStyle === "long" ? 5 : 3, hairColor);
+            }
           }
+
+          if (hat === "beanie") {
+            pixelRect(1, -1, 6, 2, "#526f9e");
+            pixelRect(1, 1, 6, 1, "#d4e0ee");
+          } else if (hat === "flower") {
+            pixelRect(2, -2, 2, 2, "#f1a9bc");
+            pixelRect(4, -2, 2, 2, "#f1a9bc");
+            pixelRect(3, -3, 2, 2, "#f1a9bc");
+            pixelRect(3, -1, 2, 2, "#ffd166");
+          } else if (hat === "crown") {
+            pixelRect(1, -2, 6, 1, "#e5b93f");
+            pixelRect(1, -3, 1, 2, "#ffdf70");
+            pixelRect(3, -4, 2, 3, "#ffdf70");
+            pixelRect(6, -3, 1, 2, "#ffdf70");
+            pixelRect(2, -1, 4, 1, "#b07e28");
+          }
+
+          if (direction === "down") {
+            pixelRect(3, 3, 1, 1, "#302a32");
+            pixelRect(5, 3, 1, 1, "#302a32");
+          } else if (direction === "left") {
+            pixelRect(2, 3, 1, 1, "#302a32");
+          } else if (direction === "right") {
+            pixelRect(5, 3, 1, 1, "#302a32");
+          }
+
+          if (sideFacing) {
+            pixelRect(2, 5, 4, 4, outfit.shirt);
+            pixelRect(
+              direction === "left" ? 1 : 6,
+              5 + stride,
+              1,
+              3,
+              skinColor,
+            );
+            pixelRect(3 + stride, 9, 2, 2, outfit.pants);
+            pixelRect(2 + stride, 11, 2, 1, "#40333a");
+          } else {
+            pixelRect(1, 5, 6, 4, outfit.shirt);
+            pixelRect(0, 5 + stride, 1, 3, skinColor);
+            pixelRect(7, 5 - stride, 1, 3, skinColor);
+            pixelRect(2 + stride, 9, 1, 2, outfit.pants);
+            pixelRect(5 - stride, 9, 1, 2, outfit.pants);
+            pixelRect(1 + stride, 11, 2, 1, "#40333a");
+            pixelRect(5 - stride, 11, 2, 1, "#40333a");
+          }
+
+          if (character.action === "wave") {
+            pixelRect(direction === "left" ? 1 : 6, 0, 1, 5, skinColor);
+          }
+          texture = app.renderer.generateTexture({
+            target: drawing,
+            resolution: 1,
+          });
+          texture.source.scaleMode = "nearest";
+          drawing.destroy();
+          characterTextureCache.set(textureKey, texture);
         }
+        graphics.texture = texture;
+      }
 
-        if (hat === "beanie") {
-          pixelRect(1, -1, 6, 2, "#526f9e");
-          pixelRect(1, 1, 6, 1, "#d4e0ee");
-        } else if (hat === "flower") {
-          pixelRect(2, -2, 2, 2, "#f1a9bc");
-          pixelRect(4, -2, 2, 2, "#f1a9bc");
-          pixelRect(3, -3, 2, 2, "#f1a9bc");
-          pixelRect(3, -1, 2, 2, "#ffd166");
-        } else if (hat === "crown") {
-          pixelRect(1, -2, 6, 1, "#e5b93f");
-          pixelRect(1, -3, 1, 2, "#ffdf70");
-          pixelRect(3, -4, 2, 3, "#ffdf70");
-          pixelRect(6, -3, 1, 2, "#ffdf70");
-          pixelRect(2, -1, 4, 1, "#b07e28");
+      function queueNameLabelUpdate(character, immediate) {
+        const update = {
+          text: character.appearance.username,
+          color: character.appearance.nameplateColor ?? "#ffffff",
+        };
+        const now = performance.now();
+        if (immediate || now >= (character.nextNameLabelUpdateAt ?? 0)) {
+          if (character.nameLabel.text !== update.text)
+            character.nameLabel.text = update.text;
+          if (character.nameLabelColor !== update.color) {
+            character.nameLabel.style.fill = update.color;
+            character.nameLabelColor = update.color;
+          }
+          character.nameLabelText = update.text;
+          character.pendingNameLabel = null;
+          character.nextNameLabelUpdateAt = now + NAME_LABEL_REFRESH_MS;
+          return;
         }
+        character.pendingNameLabel = update;
+      }
 
-        if (direction === "down") {
-          pixelRect(3, 3, 1, 1, "#302a32");
-          pixelRect(5, 3, 1, 1, "#302a32");
-        } else if (direction === "left") {
-          pixelRect(2, 3, 1, 1, "#302a32");
-        } else if (direction === "right") {
-          pixelRect(5, 3, 1, 1, "#302a32");
-        }
-
-        character.nameLabel.style.fill = nameplateColor ?? "#ffffff";
-
-        if (sideFacing) {
-          pixelRect(2, 5, 4, 4, outfit.shirt);
-          pixelRect(direction === "left" ? 1 : 6, 5 + stride, 1, 3, skinColor);
-          pixelRect(3 + stride, 9, 2, 2, outfit.pants);
-          pixelRect(2 + stride, 11, 2, 1, "#40333a");
-        } else {
-          pixelRect(1, 5, 6, 4, outfit.shirt);
-          pixelRect(0, 5 + stride, 1, 3, skinColor);
-          pixelRect(7, 5 - stride, 1, 3, skinColor);
-          pixelRect(2 + stride, 9, 1, 2, outfit.pants);
-          pixelRect(5 - stride, 9, 1, 2, outfit.pants);
-          pixelRect(1 + stride, 11, 2, 1, "#40333a");
-          pixelRect(5 - stride, 11, 2, 1, "#40333a");
-        }
-
-        if (character.action === "wave") {
-          pixelRect(direction === "left" ? 1 : 6, 0, 1, 5, skinColor);
+      function flushNameLabelUpdates() {
+        const now = performance.now();
+        if (now - lastNameLabelFlush < NAME_LABEL_REFRESH_MS) return;
+        lastNameLabelFlush = now;
+        for (const character of characters.values()) {
+          const update = character.pendingNameLabel;
+          if (!update || now < (character.nextNameLabelUpdateAt ?? 0)) continue;
+          if (character.nameLabel.text !== update.text)
+            character.nameLabel.text = update.text;
+          if (character.nameLabelColor !== update.color) {
+            character.nameLabel.style.fill = update.color;
+            character.nameLabelColor = update.color;
+          }
+          character.nameLabelText = update.text;
+          character.pendingNameLabel = null;
+          character.nextNameLabelUpdateAt = now + NAME_LABEL_REFRESH_MS;
         }
       }
 
@@ -1516,7 +1589,7 @@
           graphics.y = -lift;
           character.nameLabel.y = -(character.tileSize * 1.55) - lift;
         } else if (action === "sit") {
-          graphics.scale.y = 0.72;
+          graphics.scale.y = (character.tileSize / 16) * 0.72;
           graphics.y = character.tileSize * 0.18;
         } else {
           graphics.rotation = Math.sin(character.actionElapsed / 150) * 0.1;
@@ -1530,7 +1603,7 @@
           character.actionDurationMs = 2_000;
           graphics.y = 0;
           graphics.rotation = 0;
-          graphics.scale.set(1);
+          graphics.scale.set(character.tileSize / 16);
           character.nameLabel.y = -(character.tileSize * 1.55);
           renderCharacter(character);
         }
@@ -1565,6 +1638,11 @@
 
       function showLevelupCelebration(event) {
         playLevelupChime();
+        while (levelupCelebrations.length >= MAX_LEVELUP_CELEBRATIONS) {
+          const oldest = levelupCelebrations.shift();
+          effectLayer.removeChild(oldest.container);
+          oldest.container.destroy({ children: true });
+        }
         const container = new Container();
         const sparkles = new Graphics();
         const label = makeEffectLabel(
@@ -1760,7 +1838,7 @@
           character.animationFrame = 0;
           character.graphics.y = 0;
           character.graphics.rotation = 0;
-          character.graphics.scale.set(1);
+          character.graphics.scale.set(character.tileSize / 16);
           character.action = "wave";
           character.actionElapsed = 0;
           character.actionDurationMs = paradeDuration + 100;
@@ -1768,7 +1846,7 @@
         }
 
         const confetti = Array.from(
-          { length: Math.min(100, 16 + count) },
+          { length: Math.min(MAX_EFFECT_PARTICLES, 16 + count) },
           () => ({
             x: Math.random() * app.screen.width,
             y: Math.random() * app.screen.height,
@@ -1796,6 +1874,7 @@
           banner,
           bannerWidth: background.width,
           marchMs,
+          marchComplete: paradeStartDelay + lastMarcherDuration,
           raiders,
           confetti,
           confettiGraphics,
@@ -1818,17 +1897,7 @@
         const marcherStart =
           RAID_PARADE_TIMELINE.bannerEnterMs +
           RAID_PARADE_TIMELINE.marcherDelayMs;
-        const marchComplete =
-          marcherStart +
-          parade.raiders.reduce(
-            (longest, character, index) =>
-              Math.max(
-                longest,
-                index * RAID_PARADE_TIMELINE.marcherStaggerMs +
-                  parade.marchMs / character.marchSpeed,
-              ),
-            0,
-          );
+        const marchComplete = parade.marchComplete;
         if (parade.elapsed >= marchComplete) {
           if (!parade.dispersed) {
             disperseRaiders(parade);
@@ -1868,7 +1937,9 @@
 
       function drawRaidDust(parade, marcherStart) {
         parade.dustGraphics.clear();
+        const dustStride = Math.max(1, Math.ceil(parade.raiders.length / 18));
         for (let index = 0; index < parade.raiders.length; index += 1) {
+          if (index % dustStride !== 0) continue;
           const character = parade.raiders[index];
           const localElapsed =
             parade.elapsed -
@@ -2038,13 +2109,22 @@
           Math.max(40, app.screen.height * 0.16),
         );
         effectLayer.addChild(graphics, label);
-        const bursts = Array.from({ length: 2 + tier }, (_, index) => ({
-          x: app.screen.width * (0.25 + (index * 0.5) / (1 + tier)),
-          y: app.screen.height * (0.2 + Math.random() * 0.22),
-          delay: index * 0.12,
-          color: ["#ffd166", "#9be7c4", "#a9c7ff", "#f2a7d8"][index % 4],
-          size: 0.7 + tier * 0.15,
-        }));
+        const bursts = Array.from(
+          {
+            length: Math.min(
+              5,
+              Math.floor(MAX_EFFECT_PARTICLES / 14),
+              2 + tier,
+            ),
+          },
+          (_, index) => ({
+            x: app.screen.width * (0.25 + (index * 0.5) / (1 + tier)),
+            y: app.screen.height * (0.2 + Math.random() * 0.22),
+            delay: index * 0.12,
+            color: ["#ffd166", "#9be7c4", "#a9c7ff", "#f2a7d8"][index % 4],
+            size: 0.7 + tier * 0.15,
+          }),
+        );
         bursts.forEach((_, index) => playFireworkPop(index * 0.28));
         activeEffect = {
           type: "sub",
@@ -2058,7 +2138,11 @@
 
       function startBitsEffect(event) {
         const amount = Math.max(1, Number(event.amount) || 1);
-        const count = Math.min(48, 8 + Math.round(Math.sqrt(amount) * 2));
+        const count = Math.min(
+          MAX_EFFECT_PARTICLES,
+          48,
+          8 + Math.round(Math.sqrt(amount) * 2),
+        );
         const graphics = new Graphics();
         const label = makeEffectLabel(
           `${event.displayName} sent ${amount} bits!`,
@@ -2193,6 +2277,7 @@
       }
 
       app.ticker.add((ticker) => {
+        flushNameLabelUpdates();
         updateCharacters(ticker.elapsedMS);
         updateEffects(ticker.elapsedMS);
         updateLevelupCelebrations(ticker.elapsedMS);
@@ -2299,7 +2384,7 @@
                 character.actionElapsed = 0;
                 character.graphics.y = 0;
                 character.graphics.rotation = 0;
-                character.graphics.scale.set(1);
+                character.graphics.scale.set(character.tileSize / 16);
                 renderCharacter(character);
               }
             } else if (
