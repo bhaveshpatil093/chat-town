@@ -31,9 +31,8 @@
       } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
 
       const app = new Application();
-      const requestedLabelSize = Number(
-        new URLSearchParams(window.location.search).get("labelSize"),
-      );
+      const overlayParameters = new URLSearchParams(window.location.search);
+      const requestedLabelSize = Number(overlayParameters.get("labelSize"));
       const defaultLabelFontSize = Math.round(
         Math.max(14, Math.min(22, window.innerWidth / 64)),
       );
@@ -43,6 +42,22 @@
         requestedLabelSize <= 48
           ? requestedLabelSize
           : defaultLabelFontSize;
+      const characterCap = readIntegerParameter("characterCap", 150, 1, 1000);
+      const characterIdleMinutes = readIntegerParameter(
+        "idleMinutes",
+        10,
+        1,
+        1440,
+      );
+      const characterIdleMs = characterIdleMinutes * 60_000;
+      const despawnFadeMs = 800;
+      function readIntegerParameter(name, fallback, minimum, maximum) {
+        const raw = overlayParameters.get(name);
+        const value = raw === null ? fallback : Number(raw);
+        return Number.isInteger(value) && value >= minimum && value <= maximum
+          ? value
+          : fallback;
+      }
       await app.init({
         resizeTo: window,
         autoDensity: true,
@@ -73,6 +88,7 @@
       depthLayer.sortableChildren = true;
       const decorations = [];
       const characters = new Map();
+      const characterPool = [];
       const occupiedTiles = new Set();
       const reservedTiles = new Set();
       const walkDirections = ["up", "down", "left", "right"];
@@ -119,17 +135,17 @@
           }
 
           const tileSize = Math.min(tileWidth, tileHeight);
-          const characterScale = tileSize / character.tileSize;
-          character.sprite.scale.set(characterScale);
-          character.nameLabel.scale.set(1 / characterScale);
+          drawCharacterShadow(character.shadowGraphics, tileSize);
           character.tileSize = tileSize;
+          renderCharacter(character);
+          character.nameLabel.y = -(tileSize * 1.55);
           character.baseX = (character.column + 0.5) * tileWidth;
           character.baseY = (character.row + 1) * tileHeight;
           character.sprite.x = character.baseX;
           character.sprite.y = character.baseY;
           character.sprite.zIndex = character.sprite.y;
           if (character.bubble) {
-            character.bubble.baseScale = 1 / characterScale;
+            character.bubble.baseScale = 1;
             positionSpeechBubble(character);
             updateBubbleAppearance(character.bubble);
           }
@@ -257,10 +273,11 @@
       function spawnCharacter(username, userId = username) {
         const normalizedUsername = username.trim().toLowerCase();
         const identity = userId.trim() || normalizedUsername;
-        if (!normalizedUsername || characters.has(identity)) return;
+        if (!normalizedUsername || characters.has(identity)) return null;
+        if (characters.size >= characterCap) return null;
 
         const spawnTile = chooseSpawnTile();
-        if (!spawnTile) return;
+        if (!spawnTile) return null;
 
         const random = createSeededRandom(hashUsername(normalizedUsername));
         const appearance = {
@@ -271,6 +288,8 @@
           outfit: choose(outfits, random),
         };
         const character = createCharacter(appearance);
+        character.identity = identity;
+        character.lastChatAt = Date.now();
         const tileSize = Math.min(
           app.screen.width / townMap[0].length,
           app.screen.height / townMap.length,
@@ -287,6 +306,7 @@
         character.sprite.zIndex = character.sprite.y;
         depthLayer.addChild(character.sprite);
         characters.set(identity, character);
+        return character;
       }
 
       function chooseSpawnTile() {
@@ -332,25 +352,44 @@
       }
 
       function createCharacter(appearance) {
-        const graphics = new Graphics();
-        const shadowGraphics = new Graphics();
-        const sprite = new Container();
+        const character = characterPool.pop() || createCharacterSprite();
+        const { graphics, shadowGraphics, sprite, nameLabel } = character;
         const tileSize = Math.min(
           app.screen.width / townMap[0].length,
           app.screen.height / townMap.length,
         );
-        shadowGraphics
-          .ellipse(0, -tileSize * 0.04, tileSize * 0.38, tileSize * 0.1)
-          .fill({ color: "#17251a", alpha: 0.08 });
-        shadowGraphics
-          .ellipse(0, -tileSize * 0.03, tileSize * 0.27, tileSize * 0.07)
-          .fill({ color: "#17251a", alpha: 0.1 });
-        shadowGraphics
-          .ellipse(0, -tileSize * 0.02, tileSize * 0.16, tileSize * 0.045)
-          .fill({ color: "#17251a", alpha: 0.12 });
-        sprite.addChild(shadowGraphics, graphics);
+        drawCharacterShadow(shadowGraphics, tileSize);
+        nameLabel.text = appearance.username;
+        nameLabel.y = -(tileSize * 1.55);
+        Object.assign(character, {
+          appearance,
+          tileSize,
+          row: 0,
+          column: 0,
+          baseX: 0,
+          baseY: 0,
+          state: "idle",
+          stateTimer: randomBetween(500, 1800),
+          direction: choose(walkDirections, Math.random),
+          animationFrame: 0,
+          animationTimer: 0,
+          bobTime: Math.random() * Math.PI * 2,
+          target: null,
+          bubble: null,
+          fadeElapsed: 0,
+        });
+        sprite.alpha = 1;
+        sprite.visible = true;
+        renderCharacter(character);
+        return character;
+      }
+
+      function createCharacterSprite() {
+        const graphics = new Graphics();
+        const shadowGraphics = new Graphics();
+        const sprite = new Container();
         const nameLabel = new Text({
-          text: appearance.username,
+          text: "",
           style: {
             fontFamily: "Arial, sans-serif",
             fontSize: labelFontSize,
@@ -370,29 +409,21 @@
           },
           anchor: { x: 0.5, y: 1 },
         });
-        nameLabel.y = -(tileSize * 1.55);
-        sprite.addChild(nameLabel);
-        const character = {
-          sprite,
-          graphics,
-          nameLabel,
-          appearance,
-          tileSize,
-          row: 0,
-          column: 0,
-          baseX: 0,
-          baseY: 0,
-          state: "idle",
-          stateTimer: randomBetween(500, 1800),
-          direction: choose(walkDirections, Math.random),
-          animationFrame: 0,
-          animationTimer: 0,
-          bobTime: Math.random() * Math.PI * 2,
-          target: null,
-          bubble: null,
-        };
-        renderCharacter(character);
-        return character;
+        sprite.addChild(shadowGraphics, graphics, nameLabel);
+        return { sprite, graphics, shadowGraphics, nameLabel };
+      }
+
+      function drawCharacterShadow(shadowGraphics, tileSize) {
+        shadowGraphics.clear();
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.04, tileSize * 0.38, tileSize * 0.1)
+          .fill({ color: "#17251a", alpha: 0.08 });
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.03, tileSize * 0.27, tileSize * 0.07)
+          .fill({ color: "#17251a", alpha: 0.1 });
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.02, tileSize * 0.16, tileSize * 0.045)
+          .fill({ color: "#17251a", alpha: 0.12 });
       }
 
       function renderCharacter(character) {
@@ -638,6 +669,22 @@
         const deltaMs = Math.min(elapsedMs, 50);
 
         for (const character of characters.values()) {
+          if (
+            character.state !== "despawning" &&
+            Date.now() - character.lastChatAt >= characterIdleMs
+          ) {
+            beginDespawn(character);
+          }
+          if (character.state === "despawning") {
+            character.fadeElapsed += deltaMs;
+            character.sprite.alpha = Math.max(
+              0,
+              1 - character.fadeElapsed / despawnFadeMs,
+            );
+            if (character.fadeElapsed >= despawnFadeMs)
+              recycleCharacter(character);
+            continue;
+          }
           advanceSpeechBubble(character, deltaMs);
           if (character.state !== "walking") {
             character.bobTime += deltaMs;
@@ -689,6 +736,27 @@
           character.sprite.zIndex = character.sprite.y;
           positionSpeechBubble(character);
         }
+      }
+
+      function beginDespawn(character) {
+        if (character.target) reservedTiles.delete(character.target.key);
+        character.target = null;
+        character.state = "despawning";
+        character.fadeElapsed = 0;
+      }
+
+      function recycleCharacter(character) {
+        characters.delete(character.identity);
+        occupiedTiles.delete(`${character.row}:${character.column}`);
+        if (character.bubble) {
+          character.sprite.removeChild(character.bubble.container);
+          character.bubble.container.destroy({ children: true });
+          character.bubble = null;
+        }
+        depthLayer.removeChild(character.sprite);
+        character.sprite.alpha = 1;
+        character.sprite.visible = false;
+        characterPool.push(character);
       }
 
       function randomBetween(min, max) {
@@ -746,9 +814,18 @@
                 typeof event.userId === "string" && event.userId.trim()
                   ? event.userId.trim()
                   : event.displayName.trim().toLowerCase();
-              spawnCharacter(event.displayName, userId);
-              const character = characters.get(userId);
-              if (character) showSpeechBubble(character, event.message);
+              let character = characters.get(userId);
+              if (!character)
+                character = spawnCharacter(event.displayName, userId);
+              if (character) {
+                if (character.state === "despawning") {
+                  character.state = "idle";
+                  character.stateTimer = randomBetween(500, 1800);
+                  character.sprite.alpha = 1;
+                }
+                character.lastChatAt = Date.now();
+                showSpeechBubble(character, event.message);
+              }
             }
           } catch (error) {
             console.warn("[Chat Town overlay] received invalid JSON", error);
