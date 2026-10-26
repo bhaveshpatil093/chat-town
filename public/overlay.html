@@ -141,6 +141,11 @@
           character.baseY = (character.row + 1) * tileHeight;
           character.sprite.x = character.baseX;
           character.sprite.y = character.baseY;
+          if (character.bubble) {
+            character.bubble.baseScale = 1 / characterScale;
+            positionSpeechBubble(character);
+            updateBubbleAppearance(character.bubble);
+          }
         }
       }
 
@@ -204,7 +209,7 @@
         townMap.forEach((row, rowIndex) => {
           [...row].forEach((tile, columnIndex) => {
             const key = `${rowIndex}:${columnIndex}`;
-            if (tile === "g" && rowIndex > 0) {
+            if (tile === "g" && rowIndex > 2) {
               const spot = { row: rowIndex, column: columnIndex, key };
               grassTiles.push(spot);
               if (!occupiedTiles.has(key) && !reservedTiles.has(key)) {
@@ -271,6 +276,7 @@
           animationTimer: 0,
           bobTime: Math.random() * Math.PI * 2,
           target: null,
+          bubble: null,
         };
         renderCharacter(character);
         return character;
@@ -342,6 +348,126 @@
         }
       }
 
+      function showSpeechBubble(character, message) {
+        if (character.bubble) {
+          character.sprite.removeChild(character.bubble.container);
+          character.bubble.container.destroy({ children: true });
+        }
+
+        const maxWidth = Math.max(80, Math.min(300, window.innerWidth - 16));
+        const paddingX = 10;
+        const paddingY = 7;
+        const fontSize = Math.max(12, Math.min(16, labelFontSize * 0.75));
+        const textWidth = Math.max(48, maxWidth - paddingX * 2);
+        const charactersPerLine = Math.floor(textWidth / (fontSize * 0.55));
+        const maxCharacters = Math.max(
+          30,
+          Math.min(180, charactersPerLine * 4),
+        );
+        const bubbleText = new Text({
+          text: truncateMessage(message, maxCharacters),
+          style: {
+            fontFamily: "Arial, sans-serif",
+            fontSize,
+            fontWeight: "bold",
+            fill: "#ffffff",
+            stroke: { fill: "#142018", width: 2 },
+            dropShadow: {
+              color: "#000000",
+              alpha: 0.8,
+              blur: 2,
+              distance: 1,
+              angle: Math.PI / 2,
+            },
+            wordWrap: true,
+            wordWrapWidth: textWidth,
+            breakWords: true,
+            lineHeight: fontSize * 1.2,
+          },
+        });
+        bubbleText.anchor.set(0.5, 0);
+
+        const width = Math.min(
+          maxWidth,
+          Math.max(72, bubbleText.width + paddingX * 2),
+        );
+        const height = bubbleText.height + paddingY * 2;
+        const bubbleGraphics = new Graphics();
+        const bubbleColor = { color: "#142018", alpha: 0.94 };
+        bubbleGraphics
+          .roundRect(-width / 2, -height, width, height, 8)
+          .fill(bubbleColor);
+        bubbleGraphics
+          .moveTo(-7, 0)
+          .lineTo(0, 7)
+          .lineTo(7, 0)
+          .closePath()
+          .fill(bubbleColor);
+        bubbleText.y = -height + paddingY;
+
+        const container = new Container();
+        container.addChild(bubbleGraphics, bubbleText);
+        container.alpha = 0;
+        character.sprite.addChild(container);
+        character.bubble = {
+          container,
+          width,
+          age: 0,
+          baseScale: 1 / character.sprite.scale.x,
+        };
+        updateBubbleAppearance(character.bubble);
+        positionSpeechBubble(character);
+      }
+
+      function truncateMessage(message, maxCharacters) {
+        const characters = Array.from(message.trim());
+        if (characters.length <= maxCharacters) return characters.join("");
+        return `${characters
+          .slice(0, maxCharacters - 1)
+          .join("")
+          .trimEnd()}…`;
+      }
+
+      function updateBubbleAppearance(bubble) {
+        const popProgress = Math.min(bubble.age / 160, 1);
+        const popEase = 1 - (1 - popProgress) ** 3;
+        const fadeProgress = Math.max(0, (bubble.age - 3_800) / 200);
+        bubble.container.alpha = popEase * (1 - fadeProgress);
+        const popScale = 0.72 + 0.28 * popEase;
+        bubble.container.scale.set(bubble.baseScale * popScale);
+      }
+
+      function positionSpeechBubble(character) {
+        const bubble = character.bubble;
+        if (!bubble) return;
+
+        const scale = character.sprite.scale.x;
+        const minimumX = bubble.width / 2 + 4;
+        const maximumX = app.screen.width - bubble.width / 2 - 4;
+        const centerX = Math.max(
+          minimumX,
+          Math.min(maximumX, character.sprite.x),
+        );
+        bubble.container.x = (centerX - character.sprite.x) / scale;
+        bubble.container.y =
+          character.nameLabel.y - (labelFontSize + 14) / scale;
+      }
+
+      function advanceSpeechBubble(character, deltaMs) {
+        const bubble = character.bubble;
+        if (!bubble) return;
+
+        bubble.age += deltaMs;
+        if (bubble.age >= 4_000) {
+          character.sprite.removeChild(bubble.container);
+          bubble.container.destroy({ children: true });
+          character.bubble = null;
+          return;
+        }
+
+        updateBubbleAppearance(bubble);
+      }
+
       function findWanderTarget(character) {
         const steps = {
           up: { row: -1, column: 0 },
@@ -356,7 +482,7 @@
           for (let distance = 1; distance <= 3; distance += 1) {
             const row = character.row + step.row * distance;
             const column = character.column + step.column * distance;
-            if (row < 1 || row >= townMap.length) break;
+            if (row < 3 || row >= townMap.length) break;
 
             const tile = townMap[row][column];
             if (!tile || tile === "T") break;
@@ -392,12 +518,14 @@
         const deltaMs = Math.min(elapsedMs, 50);
 
         for (const character of characters.values()) {
+          advanceSpeechBubble(character, deltaMs);
           if (character.state !== "walking") {
             character.bobTime += deltaMs;
             character.sprite.y =
               character.baseY + Math.sin(character.bobTime / 240) * 2;
             character.stateTimer -= deltaMs;
             if (character.stateTimer <= 0) startWandering(character);
+            positionSpeechBubble(character);
             continue;
           }
 
@@ -436,6 +564,8 @@
             character.sprite.x += (distanceX / distance) * travel;
             character.sprite.y += (distanceY / distance) * travel;
           }
+
+          positionSpeechBubble(character);
         }
       }
 
@@ -487,13 +617,16 @@
             console.log("[Chat Town overlay] event", event);
             if (
               event.type === "chat" &&
-              typeof event.displayName === "string"
+              typeof event.displayName === "string" &&
+              typeof event.message === "string"
             ) {
               const userId =
-                typeof event.userId === "string"
-                  ? event.userId
-                  : event.displayName;
+                typeof event.userId === "string" && event.userId.trim()
+                  ? event.userId.trim()
+                  : event.displayName.trim().toLowerCase();
               spawnCharacter(event.displayName, userId);
+              const character = characters.get(userId);
+              if (character) showSpeechBubble(character, event.message);
             }
           } catch (error) {
             console.warn("[Chat Town overlay] received invalid JSON", error);
