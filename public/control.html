@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#101714" />
+    <title>Chat Town · Event Control</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        background: #101714;
+        color: #edf4e9;
+        font-synthesis: none;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        min-height: 100vh;
+        margin: 0;
+        padding: clamp(20px, 5vw, 64px);
+        background:
+          radial-gradient(ellipse at 15% 0%, #263d2d 0, transparent 42%),
+          #101714;
+      }
+      main {
+        width: min(760px, 100%);
+        margin: 0 auto;
+      }
+      .eyebrow {
+        color: #a4d17b;
+        font-size: 0.76rem;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+      h1 {
+        margin: 10px 0 8px;
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        letter-spacing: -0.05em;
+      }
+      .intro {
+        margin: 0;
+        color: #b4c2b5;
+        line-height: 1.6;
+      }
+      section {
+        margin-top: 30px;
+        padding: clamp(18px, 3vw, 28px);
+        border: 1px solid #34463a;
+        border-radius: 18px;
+        background: rgb(22 32 26 / 92%);
+        box-shadow: 0 18px 50px rgb(0 0 0 / 18%);
+      }
+      h2 {
+        margin: 0 0 20px;
+        font-size: 1.05rem;
+      }
+      .fields {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+      .field.message {
+        grid-column: 1 / -1;
+      }
+      label {
+        color: #c8d5c8;
+        font-size: 0.85rem;
+        font-weight: 650;
+      }
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid #405448;
+        border-radius: 10px;
+        padding: 12px 13px;
+        background: #111a15;
+        color: #f4f7f1;
+        font: inherit;
+        outline: none;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: #a4d17b;
+        box-shadow: 0 0 0 3px rgb(164 209 123 / 15%);
+      }
+      textarea {
+        min-height: 88px;
+        resize: vertical;
+      }
+      .hint {
+        color: #899c8c;
+        font-size: 0.78rem;
+      }
+      .buttons {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 22px;
+      }
+      button {
+        min-height: 46px;
+        border: 1px solid #4a624e;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #263d2d;
+        color: #f3f8ef;
+        font: inherit;
+        font-weight: 700;
+        cursor: pointer;
+        transition:
+          background 140ms ease,
+          transform 140ms ease,
+          border-color 140ms ease;
+      }
+      button:hover {
+        transform: translateY(-1px);
+        border-color: #a4d17b;
+        background: #34523a;
+      }
+      button:focus-visible {
+        outline: 3px solid #a4d17b;
+        outline-offset: 2px;
+      }
+      button:disabled {
+        cursor: wait;
+        opacity: 0.6;
+        transform: none;
+      }
+      .raid-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 18px;
+      }
+      .raid-row label {
+        white-space: nowrap;
+      }
+      .raid-row input {
+        max-width: 180px;
+      }
+      #status {
+        min-height: 1.4em;
+        margin: 18px 0 0;
+        color: #a4d17b;
+        font-size: 0.9rem;
+      }
+      #status[data-error="true"] {
+        color: #ff9e8e;
+      }
+      pre {
+        overflow: auto;
+        max-height: 300px;
+        margin: 12px 0 0;
+        padding: 14px;
+        border-radius: 10px;
+        background: #0b100d;
+        color: #c9d7c8;
+        font-size: 0.78rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      @media (max-width: 560px) {
+        .fields,
+        .buttons {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+      @media (max-width: 380px) {
+        .buttons {
+          grid-template-columns: 1fr;
+        }
+        .fields {
+          grid-template-columns: 1fr;
+        }
+        .field.message {
+          grid-column: auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="eyebrow">Chat Town · Control panel</span>
+      <h1>Send a town event</h1>
+      <p class="intro">
+        Trigger simulated events and watch them appear in the overlay. Keep the
+        page open alongside your stream preview.
+      </p>
+
+      <section aria-labelledby="details-heading">
+        <h2 id="details-heading">Event details</h2>
+        <div class="fields">
+          <div class="field">
+            <label for="username">Username</label>
+            <input
+              id="username"
+              name="username"
+              value="TownGuest"
+              maxlength="25"
+              autocomplete="off"
+            />
+          </div>
+          <div class="field">
+            <label for="viewers">Raid viewer count</label>
+            <input
+              id="viewers"
+              name="viewers"
+              type="number"
+              min="1"
+              max="100000"
+              value="40"
+            />
+          </div>
+          <div class="field message">
+            <label for="message">Chat message</label>
+            <textarea id="message" name="message" maxlength="500">
+Hello, town!</textarea>
+            <span class="hint">Used when you send a chat event.</span>
+          </div>
+        </div>
+        <div class="buttons" aria-label="Simulate an event">
+          <button type="button" data-type="chat">Send chat</button>
+          <button type="button" data-type="follow">Follow</button>
+          <button type="button" data-type="sub">Subscription</button>
+          <button type="button" data-type="bits">Bits</button>
+          <button type="button" data-type="raid">Raid</button>
+          <button type="button" data-type="levelup">Level up</button>
+        </div>
+        <p id="status" role="status" aria-live="polite"></p>
+        <pre id="result" hidden></pre>
+      </section>
+    </main>
+    <script type="module">
+      const buttons = [...document.querySelectorAll("[data-type]")];
+      const status = document.querySelector("#status");
+      const result = document.querySelector("#result");
+
+      for (const button of buttons) {
+        button.addEventListener("click", async () => {
+          const type = button.dataset.type;
+          const username = document.querySelector("#username").value.trim();
+          const message = document.querySelector("#message").value.trim();
+          const payload = { type, username };
+          if (type === "chat") payload.message = message;
+          if (type === "raid") {
+            payload.viewers = Number(document.querySelector("#viewers").value);
+          }
+
+          buttons.forEach((item) => (item.disabled = true));
+          status.dataset.error = "false";
+          status.textContent = `Sending ${type} event…`;
+          result.hidden = true;
+          try {
+            const response = await fetch("/api/sim", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await response.json();
+            if (!response.ok)
+              throw new Error(data.error ?? response.statusText);
+            status.textContent = `${type[0].toUpperCase()}${type.slice(1)} event sent.`;
+            result.textContent = JSON.stringify(data.events, null, 2);
+            result.hidden = false;
+          } catch (error) {
+            status.dataset.error = "true";
+            status.textContent =
+              error instanceof Error ? error.message : "Could not send event.";
+          } finally {
+            buttons.forEach((item) => (item.disabled = false));
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

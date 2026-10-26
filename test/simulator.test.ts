@@ -44,6 +44,33 @@ describe("simulator", () => {
     expect(parseSimulationRequest({ type: "raid", viewers: 0 })).toBeNull();
   });
 
+  it("uses API username and chat message values", () => {
+    expect(
+      parseSimulationRequest({
+        type: "chat",
+        username: "  TownGuest ",
+        message: " Hello! ",
+      }),
+    ).toEqual({ type: "chat", username: "TownGuest", message: "Hello!" });
+    expect(
+      generateFakeEvents({
+        type: "chat",
+        username: "TownGuest",
+        message: "Hello!",
+      }),
+    ).toMatchObject([
+      {
+        type: "chat",
+        userId: "sim-townguest",
+        displayName: "TownGuest",
+        message: "Hello!",
+      },
+    ]);
+    expect(
+      parseSimulationRequest({ type: "chat", username: "  ", message: "hi" }),
+    ).toBeNull();
+  });
+
   it("parses CLI options and defaults to generating every event type", () => {
     expect(parseSimulatorArgs(["--type", "raid", "--viewers", "40"])).toEqual({
       type: "raid",

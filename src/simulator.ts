@@ -12,6 +12,8 @@ export type SimulationType = ChatTownEventType | "all";
 export interface SimulationRequest {
   type: SimulationType;
   viewers?: number;
+  username?: string;
+  message?: string;
 }
 
 export interface SimulatorCliOptions extends SimulationRequest {
@@ -55,9 +57,30 @@ export function parseSimulationRequest(
     return null;
   }
 
+  const username = body.username;
+  if (
+    username !== undefined &&
+    (typeof username !== "string" ||
+      username.trim().length < 1 ||
+      username.length > 25)
+  ) {
+    return null;
+  }
+  const message = body.message;
+  if (
+    message !== undefined &&
+    (typeof message !== "string" ||
+      message.trim().length < 1 ||
+      message.length > 500)
+  ) {
+    return null;
+  }
+
   return {
     type,
     ...(viewers === undefined ? {} : { viewers }),
+    ...(username === undefined ? {} : { username: username.trim() }),
+    ...(message === undefined ? {} : { message: message.trim() }),
   };
 }
 
@@ -112,9 +135,11 @@ export function generateFakeEvents(
   const types = request.type === "all" ? CHAT_TOWN_EVENT_TYPES : [request.type];
 
   return types.map((type, index) => {
-    const displayName = choose(names, random);
+    const displayName = request.username ?? choose(names, random);
     const identity = {
-      userId: `fake-${Math.floor(random() * 1_000_000)}`,
+      userId: request.username
+        ? `sim-${request.username.trim().toLowerCase()}`
+        : `fake-${Math.floor(random() * 1_000_000)}`,
       displayName,
     };
     const timestamp = now() + index;
@@ -125,7 +150,7 @@ export function generateFakeEvents(
           type,
           timestamp,
           ...identity,
-          message: choose(messages, random),
+          message: request.message ?? choose(messages, random),
         };
       case "follow":
         return { type, timestamp, ...identity };
