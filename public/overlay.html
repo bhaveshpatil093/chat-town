@@ -23,7 +23,10 @@
   </head>
   <body>
     <script type="module">
-      import { Application } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
+      import {
+        Application,
+        Graphics,
+      } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
 
       const app = new Application();
       await app.init({
@@ -34,6 +37,76 @@
       });
       app.renderer.background.alpha = 0;
       document.body.appendChild(app.canvas);
+
+      const townMap = [
+        "gggggggggggggggggg",
+        "gggTggggggggTggggg",
+        "gggggggggggggggggg",
+        "pppppppppppppppppp",
+        "ggggggppgggggggggg",
+        "gTggggppggggTggggg",
+        "ggggggppgggggggggg",
+        "ggggggppppppppgggg",
+        "ggggggggggggppgggg",
+        "ggggggggggggppgggg",
+      ];
+      const tileColors = {
+        g: ["#69a84f", "#72b256"],
+        p: ["#c59a62", "#d2a96e"],
+      };
+      const townGraphics = new Graphics();
+      app.stage.addChild(townGraphics);
+
+      function drawTownMap() {
+        townGraphics.clear();
+        const tileWidth = app.screen.width / townMap[0].length;
+        const tileHeight = app.screen.height / townMap.length;
+
+        townMap.forEach((row, rowIndex) => {
+          [...row].forEach((tile, columnIndex) => {
+            const x = columnIndex * tileWidth;
+            const y = rowIndex * tileHeight;
+
+            if (tile === "T") {
+              townGraphics
+                .rect(x, y, tileWidth + 1, tileHeight + 1)
+                .fill("#69a84f");
+              townGraphics
+                .rect(
+                  x + tileWidth * 0.16,
+                  y + tileHeight * 0.08,
+                  tileWidth * 0.68,
+                  tileHeight * 0.58,
+                )
+                .fill("#27633b");
+              townGraphics
+                .rect(
+                  x + tileWidth * 0.29,
+                  y + tileHeight * 0.18,
+                  tileWidth * 0.42,
+                  tileHeight * 0.32,
+                )
+                .fill("#347947");
+              townGraphics
+                .rect(
+                  x + tileWidth * 0.43,
+                  y + tileHeight * 0.62,
+                  tileWidth * 0.14,
+                  tileHeight * 0.3,
+                )
+                .fill("#795132");
+              return;
+            }
+
+            const colors = tileColors[tile === "p" ? "p" : "g"];
+            const color = colors[(rowIndex + columnIndex) % colors.length];
+            townGraphics.rect(x, y, tileWidth + 1, tileHeight + 1).fill(color);
+          });
+        });
+      }
+
+      drawTownMap();
+      window.addEventListener("resize", drawTownMap);
 
       const initialReconnectDelayMs = 500;
       const maximumReconnectDelayMs = 30_000;
