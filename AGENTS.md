@@ -19,6 +19,7 @@ The repository currently contains the TypeScript scaffold and development toolin
 ## Folder structure
 
 - `src/` — application TypeScript source and runtime entry points.
+- `public/` — static files served by the Express server.
 - `test/` — automated tests, using Vitest.
 - `dist/` — compiled JavaScript output from the build; generated and ignored by Git.
 - `package.json` and `package-lock.json` — scripts and dependency manifest/lockfile.

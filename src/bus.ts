@@ -18,6 +18,14 @@ export interface ChatTownEventMap {
 }
 
 export type ChatTownEventType = keyof ChatTownEventMap;
+export const CHAT_TOWN_EVENT_TYPES = [
+  "chat",
+  "follow",
+  "sub",
+  "bits",
+  "raid",
+  "levelup",
+] as const satisfies readonly ChatTownEventType[];
 export type ChatTownEvent<K extends ChatTownEventType = ChatTownEventType> =
   ChatTownEventMap[K];
 export type EventListener<K extends ChatTownEventType> = (
