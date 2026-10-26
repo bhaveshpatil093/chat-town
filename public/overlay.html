@@ -58,10 +58,10 @@
         "gggggggggggggggggg",
         "pppppppppppppppppp",
         "ggggggppgggggggggg",
-        "gTggggppggggTggggg",
+        "gTggggppgHggTggggg",
         "ggggggppgggggggggg",
         "ggggggppppppppgggg",
-        "ggggggggggggppgggg",
+        "gggHggggggggppgggg",
         "ggggggggggggppgggg",
       ];
       const tileColors = {
@@ -69,11 +69,14 @@
         p: ["#c59a62", "#d2a96e"],
       };
       const townGraphics = new Graphics();
+      const depthLayer = new Container();
+      depthLayer.sortableChildren = true;
+      const decorations = [];
       const characters = new Map();
       const occupiedTiles = new Set();
       const reservedTiles = new Set();
       const walkDirections = ["up", "down", "left", "right"];
-      app.stage.addChild(townGraphics);
+      app.stage.addChild(townGraphics, depthLayer);
 
       function drawTownMap() {
         townGraphics.clear();
@@ -84,41 +87,24 @@
           [...row].forEach((tile, columnIndex) => {
             const x = columnIndex * tileWidth;
             const y = rowIndex * tileHeight;
-
-            if (tile === "T") {
-              townGraphics
-                .rect(x, y, tileWidth + 1, tileHeight + 1)
-                .fill("#69a84f");
-              townGraphics
-                .rect(
-                  x + tileWidth * 0.16,
-                  y + tileHeight * 0.08,
-                  tileWidth * 0.68,
-                  tileHeight * 0.58,
-                )
-                .fill("#27633b");
-              townGraphics
-                .rect(
-                  x + tileWidth * 0.29,
-                  y + tileHeight * 0.18,
-                  tileWidth * 0.42,
-                  tileHeight * 0.32,
-                )
-                .fill("#347947");
-              townGraphics
-                .rect(
-                  x + tileWidth * 0.43,
-                  y + tileHeight * 0.62,
-                  tileWidth * 0.14,
-                  tileHeight * 0.3,
-                )
-                .fill("#795132");
-              return;
-            }
-
             const colors = tileColors[tile === "p" ? "p" : "g"];
             const color = colors[(rowIndex + columnIndex) % colors.length];
             townGraphics.rect(x, y, tileWidth + 1, tileHeight + 1).fill(color);
+          });
+        });
+
+        for (const decoration of decorations) {
+          depthLayer.removeChild(decoration);
+          decoration.destroy({ children: true });
+        }
+        decorations.length = 0;
+
+        townMap.forEach((row, rowIndex) => {
+          [...row].forEach((tile, columnIndex) => {
+            if (tile === "T")
+              addTree(rowIndex, columnIndex, tileWidth, tileHeight);
+            if (tile === "H")
+              addHouse(rowIndex, columnIndex, tileWidth, tileHeight);
           });
         });
 
@@ -141,12 +127,111 @@
           character.baseY = (character.row + 1) * tileHeight;
           character.sprite.x = character.baseX;
           character.sprite.y = character.baseY;
+          character.sprite.zIndex = character.sprite.y;
           if (character.bubble) {
             character.bubble.baseScale = 1 / characterScale;
             positionSpeechBubble(character);
             updateBubbleAppearance(character.bubble);
           }
         }
+      }
+
+      function addTree(row, column, tileWidth, tileHeight) {
+        const tree = new Container();
+        const graphics = new Graphics();
+        const baseX = (column + 0.5) * tileWidth;
+        const baseY = (row + 1) * tileHeight;
+
+        graphics
+          .rect(
+            -tileWidth * 0.3,
+            -tileHeight * 0.84,
+            tileWidth * 0.6,
+            tileHeight * 0.55,
+          )
+          .fill("#27633b");
+        graphics
+          .rect(
+            -tileWidth * 0.43,
+            -tileHeight * 0.62,
+            tileWidth * 0.86,
+            tileHeight * 0.42,
+          )
+          .fill("#27633b");
+        graphics
+          .rect(
+            -tileWidth * 0.27,
+            -tileHeight * 0.76,
+            tileWidth * 0.54,
+            tileHeight * 0.25,
+          )
+          .fill("#347947");
+        graphics
+          .rect(
+            -tileWidth * 0.1,
+            -tileHeight * 0.28,
+            tileWidth * 0.2,
+            tileHeight * 0.28,
+          )
+          .fill("#795132");
+
+        tree.addChild(graphics);
+        tree.position.set(baseX, baseY);
+        tree.zIndex = baseY + 0.1;
+        depthLayer.addChild(tree);
+        decorations.push(tree);
+      }
+
+      function addHouse(row, column, tileWidth, tileHeight) {
+        const house = new Container();
+        const graphics = new Graphics();
+        const baseX = (column + 0.5) * tileWidth;
+        const baseY = (row + 1) * tileHeight;
+
+        graphics
+          .rect(
+            -tileWidth * 0.72,
+            -tileHeight * 1.2,
+            tileWidth * 1.44,
+            tileHeight * 1.2,
+          )
+          .fill("#d6a36d");
+        graphics
+          .moveTo(-tileWidth * 0.9, -tileHeight * 1.16)
+          .lineTo(0, -tileHeight * 2.05)
+          .lineTo(tileWidth * 0.9, -tileHeight * 1.16)
+          .closePath()
+          .fill("#9b4e43");
+        graphics
+          .rect(
+            -tileWidth * 0.14,
+            -tileHeight * 0.46,
+            tileWidth * 0.28,
+            tileHeight * 0.46,
+          )
+          .fill("#684433");
+        graphics
+          .rect(
+            -tileWidth * 0.55,
+            -tileHeight * 0.86,
+            tileWidth * 0.24,
+            tileHeight * 0.24,
+          )
+          .fill("#8cc5ce");
+        graphics
+          .rect(
+            tileWidth * 0.31,
+            -tileHeight * 0.86,
+            tileWidth * 0.24,
+            tileHeight * 0.24,
+          )
+          .fill("#8cc5ce");
+
+        house.addChild(graphics);
+        house.position.set(baseX, baseY);
+        house.zIndex = baseY + 0.1;
+        depthLayer.addChild(house);
+        decorations.push(house);
       }
 
       drawTownMap();
@@ -199,7 +284,8 @@
           (spawnTile.row + 1) * (app.screen.height / townMap.length);
         character.sprite.x = character.baseX;
         character.sprite.y = character.baseY;
-        app.stage.addChild(character.sprite);
+        character.sprite.zIndex = character.sprite.y;
+        depthLayer.addChild(character.sprite);
         characters.set(identity, character);
       }
 
@@ -209,7 +295,11 @@
         townMap.forEach((row, rowIndex) => {
           [...row].forEach((tile, columnIndex) => {
             const key = `${rowIndex}:${columnIndex}`;
-            if (tile === "g" && rowIndex > 2) {
+            if (
+              tile === "g" &&
+              rowIndex > 2 &&
+              !isHouseFootprint(rowIndex, columnIndex)
+            ) {
               const spot = { row: rowIndex, column: columnIndex, key };
               grassTiles.push(spot);
               if (!occupiedTiles.has(key) && !reservedTiles.has(key)) {
@@ -228,14 +318,37 @@
         return tile;
       }
 
+      function isHouseFootprint(row, column) {
+        return (
+          townMap[row]?.[column] === "H" ||
+          townMap.some((mapRow, houseRow) => {
+            if (houseRow !== row) return false;
+            return [...mapRow].some(
+              (tile, houseColumn) =>
+                tile === "H" && Math.abs(houseColumn - column) <= 1,
+            );
+          })
+        );
+      }
+
       function createCharacter(appearance) {
         const graphics = new Graphics();
+        const shadowGraphics = new Graphics();
         const sprite = new Container();
         const tileSize = Math.min(
           app.screen.width / townMap[0].length,
           app.screen.height / townMap.length,
         );
-        sprite.addChild(graphics);
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.04, tileSize * 0.38, tileSize * 0.1)
+          .fill({ color: "#17251a", alpha: 0.08 });
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.03, tileSize * 0.27, tileSize * 0.07)
+          .fill({ color: "#17251a", alpha: 0.1 });
+        shadowGraphics
+          .ellipse(0, -tileSize * 0.02, tileSize * 0.16, tileSize * 0.045)
+          .fill({ color: "#17251a", alpha: 0.12 });
+        sprite.addChild(shadowGraphics, graphics);
         const nameLabel = new Text({
           text: appearance.username,
           style: {
@@ -485,7 +598,14 @@
             if (row < 3 || row >= townMap.length) break;
 
             const tile = townMap[row][column];
-            if (!tile || tile === "T") break;
+            if (
+              !tile ||
+              tile === "T" ||
+              tile === "H" ||
+              isHouseFootprint(row, column)
+            ) {
+              break;
+            }
 
             const key = `${row}:${column}`;
             if (occupiedTiles.has(key) || reservedTiles.has(key)) break;
@@ -523,6 +643,7 @@
             character.bobTime += deltaMs;
             character.sprite.y =
               character.baseY + Math.sin(character.bobTime / 240) * 2;
+            character.sprite.zIndex = character.sprite.y;
             character.stateTimer -= deltaMs;
             if (character.stateTimer <= 0) startWandering(character);
             positionSpeechBubble(character);
@@ -565,6 +686,7 @@
             character.sprite.y += (distanceY / distance) * travel;
           }
 
+          character.sprite.zIndex = character.sprite.y;
           positionSpeechBubble(character);
         }
       }
