@@ -13,6 +13,9 @@ coverage/
 # Twitch OAuth credentials
 /data/twitch-token.json*
 
+# Local SQLite database and journal files
+/data/chat-town.sqlite*
+
 # Logs
 logs/
 *.log
