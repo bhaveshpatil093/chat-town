@@ -44,8 +44,12 @@
     <script type="module">
       import {
         Application,
+        Assets,
         Container,
         Graphics,
+        Rectangle,
+        Sprite,
+        Texture,
         Text,
       } from "https://cdn.jsdelivr.net/npm/pixi.js@8.19.0/dist/pixi.mjs";
 
@@ -324,6 +328,10 @@
         p: ["#c59a62", "#d2a96e"],
       };
       const townGraphics = new Graphics();
+      const townTileLayer = new Container();
+      const townTileSprites = [];
+      let townAtlas = null;
+      const townAtlasTextures = new Map();
       const depthLayer = new Container();
       const sceneTint = new Graphics();
       const nightLighting = new Graphics();
@@ -356,6 +364,7 @@
       let fireflyElapsedMs = 0;
       app.stage.addChild(
         townGraphics,
+        townTileLayer,
         depthLayer,
         sceneTint,
         nightLighting,
@@ -363,25 +372,99 @@
         effectLayer,
       );
 
+      async function loadTownAtlas() {
+        try {
+          townAtlas = await Assets.load(
+            "/assets/kenney-tiny-town/tilemap_packed.png",
+          );
+          townAtlas.source.scaleMode = "nearest";
+        } catch (error) {
+          townAtlas = null;
+          console.warn(
+            "[Chat Town overlay] atlas unavailable; using procedural town art",
+            error,
+          );
+        }
+      }
+
+      function atlasTile(index) {
+        if (!townAtlas) return Texture.EMPTY;
+        if (!townAtlasTextures.has(index)) {
+          const column = index % 12;
+          const row = Math.floor(index / 12);
+          townAtlasTextures.set(
+            index,
+            new Texture({
+              source: townAtlas.source,
+              frame: new Rectangle(column * 16, row * 16, 16, 16),
+            }),
+          );
+        }
+        return townAtlasTextures.get(index);
+      }
+
+      function groundTileIndex(tile, row, column) {
+        const variation = (row * 7 + column * 11) % 4;
+        if (tile === "p") return 25;
+        return [0, 1, 1, 2][variation];
+      }
+
+      function drawGround(tileWidth, tileHeight) {
+        if (!townAtlas) {
+          townTileLayer.visible = false;
+          townGraphics.visible = true;
+          townMap.forEach((row, rowIndex) => {
+            [...row].forEach((tile, columnIndex) => {
+              const colors = tileColors[tile === "p" ? "p" : "g"];
+              const color = colors[(rowIndex + columnIndex) % colors.length];
+              townGraphics
+                .rect(
+                  columnIndex * tileWidth,
+                  rowIndex * tileHeight,
+                  tileWidth + 1,
+                  tileHeight + 1,
+                )
+                .fill(color);
+            });
+          });
+          return;
+        }
+
+        townGraphics.clear();
+        townGraphics.visible = false;
+        townTileLayer.visible = true;
+        let spriteIndex = 0;
+        townMap.forEach((row, rowIndex) => {
+          [...row].forEach((tile, columnIndex) => {
+            const texture = atlasTile(
+              groundTileIndex(tile, rowIndex, columnIndex),
+            );
+            let sprite = townTileSprites[spriteIndex];
+            if (!sprite) {
+              sprite = new Sprite(texture);
+              townTileSprites[spriteIndex] = sprite;
+              townTileLayer.addChild(sprite);
+            } else {
+              sprite.texture = texture;
+            }
+            sprite.position.set(columnIndex * tileWidth, rowIndex * tileHeight);
+            sprite.width = tileWidth + 1;
+            sprite.height = tileHeight + 1;
+            spriteIndex += 1;
+          });
+        });
+      }
+
       function drawTownMap() {
         townGraphics.clear();
         const tileWidth = app.screen.width / townMap[0].length;
         const tileHeight = app.screen.height / townMap.length;
+        drawGround(tileWidth, tileHeight);
         sceneTint.clear();
         sceneTint
           .rect(0, 0, app.screen.width, app.screen.height)
           .fill({ color: "#1a2850", alpha: 0.42 });
         sceneTint.alpha = nightLevel;
-
-        townMap.forEach((row, rowIndex) => {
-          [...row].forEach((tile, columnIndex) => {
-            const x = columnIndex * tileWidth;
-            const y = rowIndex * tileHeight;
-            const colors = tileColors[tile === "p" ? "p" : "g"];
-            const color = colors[(rowIndex + columnIndex) % colors.length];
-            townGraphics.rect(x, y, tileWidth + 1, tileHeight + 1).fill(color);
-          });
-        });
 
         for (const decoration of decorations) {
           depthLayer.removeChild(decoration);
@@ -454,44 +537,52 @@
 
       function addTree(row, column, tileWidth, tileHeight) {
         const tree = new Container();
-        const graphics = new Graphics();
         const baseX = (column + 0.5) * tileWidth;
         const baseY = (row + 1) * tileHeight;
-
-        graphics
-          .rect(
-            -tileWidth * 0.3,
-            -tileHeight * 0.84,
-            tileWidth * 0.6,
-            tileHeight * 0.55,
-          )
-          .fill("#27633b");
-        graphics
-          .rect(
-            -tileWidth * 0.43,
-            -tileHeight * 0.62,
-            tileWidth * 0.86,
-            tileHeight * 0.42,
-          )
-          .fill("#27633b");
-        graphics
-          .rect(
-            -tileWidth * 0.27,
-            -tileHeight * 0.76,
-            tileWidth * 0.54,
-            tileHeight * 0.25,
-          )
-          .fill("#347947");
-        graphics
-          .rect(
-            -tileWidth * 0.1,
-            -tileHeight * 0.28,
-            tileWidth * 0.2,
-            tileHeight * 0.28,
-          )
-          .fill("#795132");
-
-        tree.addChild(graphics);
+        if (townAtlas) {
+          const sprite = new Sprite(
+            atlasTile((row + column) % 2 === 0 ? 4 : 5),
+          );
+          sprite.anchor.set(0.5, 1);
+          sprite.width = tileWidth;
+          sprite.height = tileHeight;
+          tree.addChild(sprite);
+        } else {
+          const graphics = new Graphics();
+          graphics
+            .rect(
+              -tileWidth * 0.3,
+              -tileHeight * 0.84,
+              tileWidth * 0.6,
+              tileHeight * 0.55,
+            )
+            .fill("#27633b");
+          graphics
+            .rect(
+              -tileWidth * 0.43,
+              -tileHeight * 0.62,
+              tileWidth * 0.86,
+              tileHeight * 0.42,
+            )
+            .fill("#27633b");
+          graphics
+            .rect(
+              -tileWidth * 0.27,
+              -tileHeight * 0.76,
+              tileWidth * 0.54,
+              tileHeight * 0.25,
+            )
+            .fill("#347947");
+          graphics
+            .rect(
+              -tileWidth * 0.1,
+              -tileHeight * 0.28,
+              tileWidth * 0.2,
+              tileHeight * 0.28,
+            )
+            .fill("#795132");
+          tree.addChild(graphics);
+        }
         tree.position.set(baseX, baseY);
         tree.zIndex = baseY + 0.1;
         depthLayer.addChild(tree);
@@ -792,7 +883,6 @@
         }
         drawTownMap();
       }
-      void loadTownState();
       window.addEventListener("resize", drawTownMap);
 
       const skinColors = ["#f2c49b", "#d99a6c", "#b97850", "#80513f"];
@@ -2271,7 +2361,13 @@
         return /^!(dance|jump|wave|sit)$/i.test(message.trim());
       }
 
-      connect();
+      async function startOverlay() {
+        await loadTownAtlas();
+        await loadTownState();
+        connect();
+      }
+
+      void startOverlay();
     </script>
   </body>
 </html>
