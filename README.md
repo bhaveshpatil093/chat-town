@@ -39,6 +39,8 @@ SQLite persistence is available through `createDatabase()` in `src/db.ts`. It op
 
 The overlay loads saved viewer profiles and town objects from `/api/town` when it starts. Houses and trees created by follows are stored with their grid position and owner, so regulars' houses remain visible while their characters are away. House styles are updated when a viewer unlocks an upgrade.
 
+Overlay audio is synthesized at runtime with the Web Audio API. Click **Enable sound** once on the overlay to satisfy browser audio permissions; then use the control page's master volume and mute controls. Sound is original generated audio with no external samples or libraries; see [assets/CREDITS.md](assets/CREDITS.md).
+
 Viewer progression is persisted by Twitch user ID. Each chatter earns 5 XP at most once per minute, follows earn 25 XP, subscriptions earn 100 XP per tier, and Cheers earn 1 XP per 10 Bits up to 100 XP per Cheer. Level `n` requires `50 × (n − 1)²` total XP; each level-up emits a `levelup` event and a small overlay celebration. The highest unlocked hat is equipped automatically: beanie at level 2, flower at level 4, and crown at level 7. Regulars receive a gold nameplate at level 5. Homes upgrade from tent at level 1 to cabin at 3, house at 6, and mansion at 10.
 
 With the server running, `npm run sim -- --type raid --viewers 40` sends a fake raid to connected clients. Running `npm run sim` without options sends one event of each type. The control page can generate events through `POST /api/sim`.

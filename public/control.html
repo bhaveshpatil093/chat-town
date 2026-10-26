@@ -172,6 +172,20 @@
         padding: 16px;
         background: #111a15;
       }
+      .audio-controls input[type="range"] {
+        width: 100%;
+        accent-color: #a4d17b;
+      }
+      .audio-controls input[type="checkbox"] {
+        width: auto;
+        accent-color: #a4d17b;
+      }
+      .audio-mute {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        margin-top: 16px;
+      }
       .raid-preview strong {
         display: block;
         color: #f4d36b;
@@ -396,6 +410,28 @@ Hello, town!</textarea>
         <p id="status" role="status" aria-live="polite"></p>
         <pre id="result" hidden></pre>
       </section>
+      <section aria-labelledby="audio-heading">
+        <h2 id="audio-heading">Overlay sound</h2>
+        <div class="audio-controls">
+          <label for="master-volume">Master volume</label>
+          <input
+            id="master-volume"
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value="25"
+          />
+          <span id="master-volume-value" class="hint">25%</span>
+          <label class="audio-mute" for="audio-muted">
+            <input id="audio-muted" type="checkbox" />
+            Mute overlay audio
+          </label>
+          <p id="audio-status" class="hint" aria-live="polite">
+            Enable sound once from the overlay to start its ambient loop.
+          </p>
+        </div>
+      </section>
       <section aria-labelledby="twitch-heading">
         <h2 id="twitch-heading">Twitch connection</h2>
         <span id="twitch-state" class="twitch-state" data-state="connecting"
@@ -414,6 +450,9 @@ Hello, town!</textarea>
       const result = document.querySelector("#result");
       const raidChannel = document.querySelector("#raid-channel");
       const raidViewers = document.querySelector("#viewers");
+      const masterVolume = document.querySelector("#master-volume");
+      const audioMuted = document.querySelector("#audio-muted");
+      let audioSaveTimer;
 
       function updateRaidPreview() {
         const channel = raidChannel.value.trim() || "Raid channel";
@@ -426,6 +465,62 @@ Hello, town!</textarea>
 
       raidChannel.addEventListener("input", updateRaidPreview);
       raidViewers.addEventListener("input", updateRaidPreview);
+
+      function applyAudioSettings(settings) {
+        masterVolume.value = String(Math.round(settings.volume * 100));
+        audioMuted.checked = settings.muted;
+        document.querySelector("#master-volume-value").textContent =
+          `${masterVolume.value}%`;
+      }
+
+      async function loadAudioSettings() {
+        try {
+          const response = await fetch("/api/audio/settings", {
+            cache: "no-store",
+          });
+          if (!response.ok) throw new Error("Could not load audio settings.");
+          applyAudioSettings(await response.json());
+        } catch (error) {
+          document.querySelector("#audio-status").textContent =
+            error instanceof Error
+              ? error.message
+              : "Audio settings unavailable.";
+        }
+      }
+
+      async function saveAudioSettings() {
+        const settings = {
+          volume: Number(masterVolume.value) / 100,
+          muted: audioMuted.checked,
+        };
+        try {
+          const response = await fetch("/api/audio/settings", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(settings),
+          });
+          if (!response.ok) throw new Error("Could not save audio settings.");
+          document.querySelector("#audio-status").textContent = settings.muted
+            ? "Overlay audio is muted."
+            : "Overlay audio settings updated.";
+        } catch (error) {
+          document.querySelector("#audio-status").textContent =
+            error instanceof Error
+              ? error.message
+              : "Could not update audio settings.";
+        }
+      }
+
+      function scheduleAudioSettingsSave() {
+        document.querySelector("#master-volume-value").textContent =
+          `${masterVolume.value}%`;
+        window.clearTimeout(audioSaveTimer);
+        audioSaveTimer = window.setTimeout(saveAudioSettings, 120);
+      }
+
+      masterVolume.addEventListener("input", scheduleAudioSettingsSave);
+      audioMuted.addEventListener("change", scheduleAudioSettingsSave);
+      void loadAudioSettings();
 
       const stateLabels = {
         disabled: "Simulator-only mode",

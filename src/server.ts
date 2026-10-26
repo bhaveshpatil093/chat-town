@@ -41,6 +41,7 @@ export function createChatTownServer(
   configureTwitchStatus(config.twitchEnabled, config.twitchChannel);
   const app = express();
   app.use(express.json());
+  const audioSettings = { volume: 0.25, muted: false };
 
   app.get("/health", (_request, response) => {
     response.status(200).json({
@@ -52,6 +53,35 @@ export function createChatTownServer(
 
   app.get("/api/twitch/status", (_request, response) => {
     response.status(200).json(getTwitchStatus());
+  });
+
+  app.get("/api/audio/settings", (_request, response) => {
+    response.status(200).json(audioSettings);
+  });
+
+  app.post("/api/audio/settings", (request, response) => {
+    const { volume, muted } = request.body ?? {};
+    if (
+      typeof volume !== "number" ||
+      !Number.isFinite(volume) ||
+      volume < 0 ||
+      volume > 1 ||
+      typeof muted !== "boolean"
+    ) {
+      response.status(400).json({
+        error: "Expected volume between 0 and 1 and a boolean muted value.",
+      });
+      return;
+    }
+    audioSettings.volume = volume;
+    audioSettings.muted = muted;
+    bus.emit({
+      type: "control",
+      timestamp: Date.now(),
+      command: "audio-settings",
+      ...audioSettings,
+    });
+    response.status(200).json(audioSettings);
   });
 
   app.get("/api/town", (_request, response) => {

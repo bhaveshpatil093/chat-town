@@ -39,6 +39,7 @@ export interface ChatTownEventMap {
     (
       | { command: "panic" | "restore" }
       | { command: "remove-character"; displayName: string }
+      | { command: "audio-settings"; volume: number; muted: boolean }
     );
   follow: BaseEvent<"follow"> &
     UserIdentity & { townObject?: FollowTownObject };

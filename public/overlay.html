@@ -19,9 +19,28 @@
         width: 100vw;
         height: 100vh;
       }
+      #audio-enable {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        z-index: 20;
+        border: 1px solid #b6d99a;
+        border-radius: 999px;
+        padding: 9px 14px;
+        background: #101714e8;
+        color: #edffe8;
+        font:
+          600 13px/1.2 system-ui,
+          sans-serif;
+        cursor: pointer;
+      }
+      #audio-enable[hidden] {
+        display: none;
+      }
     </style>
   </head>
   <body>
+    <button id="audio-enable" type="button">Enable sound</button>
     <script type="module">
       import {
         Application,
@@ -85,6 +104,179 @@
       let panicMode = false;
       let debugFrameCount = 0;
       let debugElapsedMs = 0;
+      let audioContext = null;
+      let masterGain = null;
+      let audioSettings = { volume: 0.25, muted: false };
+      const audioEnableButton = document.querySelector("#audio-enable");
+
+      function applyAudioSettings(settings) {
+        if (typeof settings.volume === "number") {
+          audioSettings.volume = Math.max(0, Math.min(1, settings.volume));
+        }
+        if (typeof settings.muted === "boolean") {
+          audioSettings.muted = settings.muted;
+        }
+        if (masterGain && audioContext) {
+          masterGain.gain.setTargetAtTime(
+            audioSettings.muted ? 0 : audioSettings.volume,
+            audioContext.currentTime,
+            0.08,
+          );
+        }
+      }
+
+      function startAmbientLoop() {
+        const sampleRate = audioContext.sampleRate;
+        const buffer = audioContext.createBuffer(1, sampleRate * 3, sampleRate);
+        const samples = buffer.getChannelData(0);
+        for (let index = 0; index < samples.length; index += 1) {
+          samples[index] = (Math.random() * 2 - 1) * 0.3;
+        }
+        const noise = audioContext.createBufferSource();
+        noise.buffer = buffer;
+        noise.loop = true;
+        const lowPass = audioContext.createBiquadFilter();
+        lowPass.type = "lowpass";
+        lowPass.frequency.value = 260;
+        const ambience = audioContext.createGain();
+        ambience.gain.value = 0.025;
+        noise.connect(lowPass).connect(ambience).connect(masterGain);
+        noise.start();
+
+        for (const [frequency, volume] of [
+          [55, 0.012],
+          [82.4, 0.006],
+        ]) {
+          const tone = audioContext.createOscillator();
+          const toneGain = audioContext.createGain();
+          tone.type = "sine";
+          tone.frequency.value = frequency;
+          toneGain.gain.value = volume;
+          tone.connect(toneGain).connect(masterGain);
+          tone.start();
+        }
+      }
+
+      async function enableAudio() {
+        try {
+          if (!audioContext) {
+            const AudioContextClass =
+              window.AudioContext || window.webkitAudioContext;
+            if (!AudioContextClass)
+              throw new Error("Web Audio is unavailable.");
+            audioContext = new AudioContextClass();
+            masterGain = audioContext.createGain();
+            masterGain.connect(audioContext.destination);
+            applyAudioSettings(audioSettings);
+            startAmbientLoop();
+          }
+          await audioContext.resume();
+          if (audioContext.state === "running") audioEnableButton.hidden = true;
+        } catch (error) {
+          audioEnableButton.textContent =
+            error instanceof Error
+              ? "Sound unavailable"
+              : "Tap to enable sound";
+          console.warn("[Chat Town overlay] could not enable audio", error);
+        }
+      }
+
+      audioEnableButton.addEventListener("click", enableAudio);
+
+      function playTone(frequency, duration, wave, volume, delay = 0) {
+        if (!audioContext || audioContext.state !== "running" || !masterGain)
+          return;
+        const startAt = audioContext.currentTime + delay;
+        const oscillator = audioContext.createOscillator();
+        const envelope = audioContext.createGain();
+        oscillator.type = wave;
+        oscillator.frequency.setValueAtTime(frequency, startAt);
+        envelope.gain.setValueAtTime(0.0001, startAt);
+        envelope.gain.linearRampToValueAtTime(volume, startAt + 0.018);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+        oscillator.connect(envelope).connect(masterGain);
+        oscillator.start(startAt);
+        oscillator.stop(startAt + duration + 0.02);
+      }
+
+      function playRaidHorn() {
+        if (!audioContext || audioContext.state !== "running" || !masterGain)
+          return;
+        const startAt = audioContext.currentTime;
+        const horn = audioContext.createOscillator();
+        const filter = audioContext.createBiquadFilter();
+        const envelope = audioContext.createGain();
+        horn.type = "sawtooth";
+        horn.frequency.setValueAtTime(115, startAt);
+        horn.frequency.linearRampToValueAtTime(146.8, startAt + 0.28);
+        filter.type = "lowpass";
+        filter.frequency.value = 850;
+        envelope.gain.setValueAtTime(0.0001, startAt);
+        envelope.gain.linearRampToValueAtTime(0.13, startAt + 0.12);
+        envelope.gain.setValueAtTime(0.13, startAt + 0.62);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + 1.05);
+        horn.connect(filter).connect(envelope).connect(masterGain);
+        horn.start(startAt);
+        horn.stop(startAt + 1.08);
+      }
+
+      function playFireworkPop(delay = 0) {
+        if (!audioContext || audioContext.state !== "running" || !masterGain)
+          return;
+        const startAt = audioContext.currentTime + delay;
+        const buffer = audioContext.createBuffer(
+          1,
+          Math.floor(audioContext.sampleRate * 0.18),
+          audioContext.sampleRate,
+        );
+        const samples = buffer.getChannelData(0);
+        for (let index = 0; index < samples.length; index += 1) {
+          samples[index] =
+            (Math.random() * 2 - 1) * (1 - index / samples.length);
+        }
+        const burst = audioContext.createBufferSource();
+        const filter = audioContext.createBiquadFilter();
+        const envelope = audioContext.createGain();
+        burst.buffer = buffer;
+        filter.type = "bandpass";
+        filter.frequency.value = 1150;
+        envelope.gain.setValueAtTime(0.11, startAt);
+        envelope.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.18);
+        burst.connect(filter).connect(envelope).connect(masterGain);
+        burst.start(startAt);
+      }
+
+      function playCoinSounds(amount) {
+        const notes = Math.min(
+          5,
+          1 + Math.floor(Math.log10(Math.max(1, amount))),
+        );
+        const scale = [1046.5, 1318.5, 1568, 2093, 1760];
+        for (let index = 0; index < notes; index += 1) {
+          playTone(scale[index], 0.16, "sine", 0.12, index * 0.105);
+        }
+      }
+
+      function playLevelupChime() {
+        [523.25, 659.25, 783.99, 1046.5].forEach((frequency, index) => {
+          playTone(frequency, 0.48, "sine", 0.13, index * 0.11);
+        });
+      }
+
+      async function loadAudioSettings() {
+        try {
+          const response = await fetch("/api/audio/settings", {
+            cache: "no-store",
+          });
+          if (response.ok) applyAudioSettings(await response.json());
+        } catch (error) {
+          console.warn(
+            "[Chat Town overlay] could not load audio settings",
+            error,
+          );
+        }
+      }
+      void loadAudioSettings();
 
       function toggleDebugOverlay(event) {
         if (
@@ -1282,6 +1474,7 @@
       }
 
       function showLevelupCelebration(event) {
+        playLevelupChime();
         const container = new Container();
         const sparkles = new Graphics();
         const label = makeEffectLabel(
@@ -1371,6 +1564,7 @@
       }
 
       function startRaidParade(event) {
+        playRaidHorn();
         const count = Math.min(
           Math.max(0, Math.floor(Number(event.viewerCount) || 0)),
           MAX_RAID_MARCHERS,
@@ -1761,6 +1955,7 @@
           color: ["#ffd166", "#9be7c4", "#a9c7ff", "#f2a7d8"][index % 4],
           size: 0.7 + tier * 0.15,
         }));
+        bursts.forEach((_, index) => playFireworkPop(index * 0.28));
         activeEffect = {
           type: "sub",
           elapsed: 0,
@@ -1785,6 +1980,7 @@
         );
         effectLayer.addChild(graphics, label);
         const coins = Math.random() < 0.5;
+        if (coins) playCoinSounds(amount);
         const particles = Array.from({ length: count }, () => ({
           x: Math.random() * app.screen.width,
           y: -Math.random() * app.screen.height * 0.6,
@@ -2046,6 +2242,8 @@
                     username,
                 );
                 if (character) beginDespawn(character);
+              } else if (event.command === "audio-settings") {
+                applyAudioSettings(event);
               }
             }
           } catch (error) {

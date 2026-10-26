@@ -77,6 +77,45 @@ describe("Chat Town server", () => {
     });
   });
 
+  it("broadcasts and validates shared audio settings", async () => {
+    const bus = new EventBus();
+    chatTownServer = createTestServer(bus);
+    await listen(chatTownServer);
+
+    const client = new WebSocket(webSocketUrl(chatTownServer));
+    await once(client, "open");
+    const messageReceived = once(client, "message");
+    const response = await fetch(
+      `${serverUrl(chatTownServer)}api/audio/settings`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ volume: 0.42, muted: true }),
+      },
+    );
+    const [payload] = await messageReceived;
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ volume: 0.42, muted: true });
+    expect(JSON.parse(payload.toString())).toMatchObject({
+      type: "control",
+      command: "audio-settings",
+      volume: 0.42,
+      muted: true,
+    });
+
+    const invalid = await fetch(
+      `${serverUrl(chatTownServer)}api/audio/settings`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ volume: 2, muted: false }),
+      },
+    );
+    expect(invalid.status).toBe(400);
+    client.close();
+  });
+
   it("broadcasts every normalized event to connected clients as JSON", async () => {
     const bus = new EventBus();
     chatTownServer = createTestServer(bus);
