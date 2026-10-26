@@ -7,7 +7,7 @@ import {
   type SimulatableEventType,
 } from "./bus.js";
 
-export type SimulationType = SimulatableEventType | "all";
+export type SimulationType = SimulatableEventType | "all" | "day" | "night";
 
 export interface SimulationRequest {
   type: SimulationType;
@@ -41,7 +41,7 @@ export function parseSimulationRequest(
   const type = body.type ?? "all";
   if (
     typeof type !== "string" ||
-    (type !== "all" && !isSimulatableEventType(type))
+    (type !== "all" && !isSimulationControlType(type))
   ) {
     return null;
   }
@@ -94,7 +94,7 @@ export function parseSimulatorArgs(args: string[]): SimulatorCliOptions {
     const value = args[index + 1];
 
     if (option === "--type") {
-      if (!value || (value !== "all" && !isSimulatableEventType(value))) {
+      if (!value || (value !== "all" && !isSimulationControlType(value))) {
         throw new Error(`Invalid --type value: ${value ?? "missing"}`);
       }
       type = value;
@@ -146,6 +146,9 @@ export function generateFakeEvents(
     const timestamp = now() + index;
 
     switch (type) {
+      case "day":
+      case "night":
+        return { type: "scene", timestamp, scene: type };
       case "chat":
         return {
           type,
@@ -191,7 +194,7 @@ export function generateFakeEvents(
 async function runCli(args: string[]): Promise<void> {
   if (args.includes("--help")) {
     console.log(
-      "Usage: npm run sim -- [--type all|chat|follow|sub|bits|raid|levelup] [--viewers count] [--url server-url]",
+      "Usage: npm run sim -- [--type all|chat|follow|sub|bits|raid|levelup|day|night] [--viewers count] [--url server-url]",
     );
     return;
   }
@@ -221,8 +224,14 @@ function randomInteger(min: number, max: number, random: () => number): number {
   return Math.floor(random() * (max - min + 1)) + min;
 }
 
-function isSimulatableEventType(value: string): value is SimulatableEventType {
-  return SIMULATABLE_EVENT_TYPES.some((type) => type === value);
+function isSimulationControlType(
+  value: string,
+): value is SimulatableEventType | "day" | "night" {
+  return (
+    value === "day" ||
+    value === "night" ||
+    SIMULATABLE_EVENT_TYPES.some((type) => type === value)
+  );
 }
 
 if (

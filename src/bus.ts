@@ -14,6 +14,7 @@ export interface ChatTownEventMap {
     UserIdentity & {
       action: "dance" | "jump" | "wave" | "sit";
     };
+  scene: BaseEvent<"scene"> & { scene: "day" | "night" };
   follow: BaseEvent<"follow"> & UserIdentity;
   sub: BaseEvent<"sub"> & UserIdentity & { tier: string; months?: number };
   bits: BaseEvent<"bits"> & UserIdentity & { amount: number };
@@ -22,10 +23,14 @@ export interface ChatTownEventMap {
 }
 
 export type ChatTownEventType = keyof ChatTownEventMap;
-export type SimulatableEventType = Exclude<ChatTownEventType, "action">;
+export type SimulatableEventType = Exclude<
+  ChatTownEventType,
+  "action" | "scene"
+>;
 export const CHAT_TOWN_EVENT_TYPES = [
   "chat",
   "action",
+  "scene",
   "follow",
   "sub",
   "bits",

@@ -50,6 +50,8 @@
         1440,
       );
       const characterIdleMs = characterIdleMinutes * 60_000;
+      const dayNightCycleMs =
+        readIntegerParameter("cycleMinutes", 10, 1, 1440) * 60_000;
       const despawnFadeMs = 800;
       function readIntegerParameter(name, fallback, minimum, maximum) {
         const raw = overlayParameters.get(name);
@@ -121,9 +123,13 @@
       };
       const townGraphics = new Graphics();
       const depthLayer = new Container();
+      const sceneTint = new Graphics();
+      const nightLighting = new Graphics();
+      const fireflyGraphics = new Graphics();
       const effectLayer = new Container();
       depthLayer.sortableChildren = true;
       const decorations = [];
+      const houses = [];
       const townAdditions = [];
       const characters = new Map();
       const characterPool = [];
@@ -132,12 +138,35 @@
       const occupiedTiles = new Set();
       const reservedTiles = new Set();
       const walkDirections = ["up", "down", "left", "right"];
-      app.stage.addChild(townGraphics, depthLayer, effectLayer);
+      const fireflies = Array.from({ length: 14 }, () => ({
+        x: Math.random(),
+        y: 0.44 + Math.random() * 0.5,
+        phase: Math.random() * Math.PI * 2,
+      }));
+      let cycleElapsedMs = 0;
+      let nightLevel = 0;
+      let sceneTransition = null;
+      let nightDecorationsUpdateMs = 0;
+      let lastHouseLightingLevel = 0;
+      let fireflyElapsedMs = 0;
+      app.stage.addChild(
+        townGraphics,
+        depthLayer,
+        sceneTint,
+        nightLighting,
+        fireflyGraphics,
+        effectLayer,
+      );
 
       function drawTownMap() {
         townGraphics.clear();
         const tileWidth = app.screen.width / townMap[0].length;
         const tileHeight = app.screen.height / townMap.length;
+        sceneTint.clear();
+        sceneTint
+          .rect(0, 0, app.screen.width, app.screen.height)
+          .fill({ color: "#1a2850", alpha: 0.42 });
+        sceneTint.alpha = nightLevel;
 
         townMap.forEach((row, rowIndex) => {
           [...row].forEach((tile, columnIndex) => {
@@ -154,6 +183,7 @@
           decoration.destroy({ children: true });
         }
         decorations.length = 0;
+        houses.length = 0;
 
         townMap.forEach((row, rowIndex) => {
           [...row].forEach((tile, columnIndex) => {
@@ -178,6 +208,7 @@
             addition.sprite.alpha = Math.min(1, progress * 2);
           }
         }
+        drawStreetLamps();
 
         for (const character of characters.values()) {
           if (character.state === "walking") {
@@ -257,6 +288,7 @@
       function addHouse(row, column, tileWidth, tileHeight) {
         const house = new Container();
         const graphics = new Graphics();
+        const windowGraphics = new Graphics();
         const baseX = (column + 0.5) * tileWidth;
         const baseY = (row + 1) * tileHeight;
 
@@ -282,6 +314,29 @@
             tileHeight * 0.46,
           )
           .fill("#684433");
+        house.addChild(graphics, windowGraphics);
+        house.position.set(baseX, baseY);
+        house.zIndex = baseY + 0.1;
+        house.windowGraphics = windowGraphics;
+        depthLayer.addChild(house);
+        decorations.push(house);
+        houses.push(house);
+        drawHouseWindows(house, nightLevel, tileWidth, tileHeight);
+        return house;
+      }
+
+      function drawHouseWindows(house, level, tileWidth, tileHeight) {
+        const graphics = house.windowGraphics;
+        const day = [140, 197, 206];
+        const night = [255, 215, 122];
+        const color = `#${day
+          .map((value, index) =>
+            Math.round(value + (night[index] - value) * level)
+              .toString(16)
+              .padStart(2, "0"),
+          )
+          .join("")}`;
+        graphics.clear();
         graphics
           .rect(
             -tileWidth * 0.55,
@@ -289,7 +344,7 @@
             tileWidth * 0.24,
             tileHeight * 0.24,
           )
-          .fill("#8cc5ce");
+          .fill({ color, alpha: 0.92 });
         graphics
           .rect(
             tileWidth * 0.31,
@@ -297,14 +352,103 @@
             tileWidth * 0.24,
             tileHeight * 0.24,
           )
-          .fill("#8cc5ce");
+          .fill({ color, alpha: 0.92 });
+      }
 
-        house.addChild(graphics);
-        house.position.set(baseX, baseY);
-        house.zIndex = baseY + 0.1;
-        depthLayer.addChild(house);
-        decorations.push(house);
-        return house;
+      function setScene(scene) {
+        cycleElapsedMs = scene === "night" ? dayNightCycleMs / 2 : 0;
+        sceneTransition = {
+          from: nightLevel,
+          to: scene === "night" ? 1 : 0,
+          elapsed: 0,
+          duration: 1_200,
+        };
+      }
+
+      function updateDayNight(elapsedMs) {
+        cycleElapsedMs = (cycleElapsedMs + elapsedMs) % dayNightCycleMs;
+        fireflyElapsedMs += elapsedMs;
+        const cycleProgress = cycleElapsedMs / dayNightCycleMs;
+        const naturalLevel = (1 - Math.cos(cycleProgress * Math.PI * 2)) / 2;
+        if (sceneTransition) {
+          sceneTransition.elapsed += elapsedMs;
+          const progress = Math.min(
+            sceneTransition.elapsed / sceneTransition.duration,
+            1,
+          );
+          const eased = progress * progress * (3 - 2 * progress);
+          nightLevel =
+            sceneTransition.from +
+            (sceneTransition.to - sceneTransition.from) * eased;
+          if (progress >= 1) sceneTransition = null;
+        } else {
+          nightLevel = naturalLevel;
+        }
+
+        sceneTint.alpha = nightLevel;
+        if (Math.abs(nightLevel - lastHouseLightingLevel) >= 0.025) {
+          lastHouseLightingLevel = nightLevel;
+          for (const house of houses) {
+            drawHouseWindows(
+              house,
+              nightLevel,
+              app.screen.width / townMap[0].length,
+              app.screen.height / townMap.length,
+            );
+          }
+        }
+
+        nightDecorationsUpdateMs += elapsedMs;
+        if (nightDecorationsUpdateMs >= 100) {
+          nightDecorationsUpdateMs %= 100;
+          drawStreetLamps();
+        }
+        drawFireflies();
+      }
+
+      function drawStreetLamps() {
+        nightLighting.clear();
+        if (nightLevel < 0.01) return;
+        const tileWidth = app.screen.width / townMap[0].length;
+        const tileHeight = app.screen.height / townMap.length;
+        const baseY = 4 * tileHeight;
+        for (const column of [2, 7, 12, 16]) {
+          const x = (column + 0.5) * tileWidth;
+          nightLighting
+            .circle(x, baseY - tileHeight * 0.34, tileWidth * 0.58)
+            .fill({ color: "#ffd77a", alpha: nightLevel * 0.09 });
+          nightLighting
+            .rect(x - 1.5, baseY - tileHeight * 0.75, 3, tileHeight * 0.75)
+            .fill({ color: "#433c35", alpha: nightLevel * 0.85 });
+          nightLighting
+            .circle(x, baseY - tileHeight * 0.78, tileWidth * 0.09)
+            .fill({ color: "#ffe6a6", alpha: nightLevel * 0.9 });
+        }
+      }
+
+      function drawFireflies() {
+        fireflyGraphics.clear();
+        const visibility = Math.max(0, Math.min(1, (nightLevel - 0.16) / 0.55));
+        if (visibility < 0.01) return;
+        const time = fireflyElapsedMs / 1000;
+        for (const firefly of fireflies) {
+          const phase = time * 0.65 + firefly.phase;
+          const x =
+            firefly.x * app.screen.width +
+            Math.sin(phase * 0.7) *
+              (app.screen.width / townMap[0].length) *
+              0.4;
+          const y =
+            firefly.y * app.screen.height +
+            Math.sin(phase) * (app.screen.height / townMap.length) * 0.2;
+          const glow = visibility * (0.14 + (Math.sin(phase) + 1) * 0.08);
+          fireflyGraphics
+            .circle(x, y, 5)
+            .fill({ color: "#c9f49a", alpha: glow * 0.18 });
+          fireflyGraphics
+            .circle(x, y, 1.7)
+            .fill({ color: "#e6ffbd", alpha: glow });
+        }
       }
 
       drawTownMap();
@@ -1133,6 +1277,7 @@
       app.ticker.add((ticker) => {
         updateCharacters(ticker.elapsedMS);
         updateEffects(ticker.elapsedMS);
+        updateDayNight(ticker.elapsedMS);
         updateDebugOverlay(ticker.elapsedMS);
       });
 
@@ -1228,6 +1373,11 @@
               typeof event.displayName === "string"
             ) {
               queueEffect(event);
+            } else if (
+              event.type === "scene" &&
+              (event.scene === "day" || event.scene === "night")
+            ) {
+              setScene(event.scene);
             }
           } catch (error) {
             console.warn("[Chat Town overlay] received invalid JSON", error);

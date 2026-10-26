@@ -35,6 +35,16 @@ describe("simulator", () => {
     expect(event).toMatchObject({ type: "raid", viewerCount: 40 });
   });
 
+  it("creates scene control events for day and night requests", () => {
+    expect(generateFakeEvents({ type: "night" })).toMatchObject([
+      { type: "scene", scene: "night" },
+    ]);
+    expect(parseSimulationRequest({ type: "day" })).toEqual({ type: "day" });
+    expect(
+      parseSimulationRequest({ type: "scene", scene: "night" }),
+    ).toBeNull();
+  });
+
   it("validates simulation API input", () => {
     expect(parseSimulationRequest({ type: "raid", viewers: 40 })).toEqual({
       type: "raid",

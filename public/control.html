@@ -65,6 +65,10 @@
         margin: 0 0 20px;
         font-size: 1.05rem;
       }
+      .scene-heading {
+        margin-top: 28px;
+        margin-bottom: 12px;
+      }
       .fields {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -241,6 +245,11 @@ Hello, town!</textarea>
           <button type="button" data-type="bits">Bits</button>
           <button type="button" data-type="raid">Raid</button>
           <button type="button" data-type="levelup">Level up</button>
+        </div>
+        <h2 class="scene-heading">Scene lighting</h2>
+        <div class="buttons" aria-label="Set overlay lighting">
+          <button type="button" data-type="day">Set day</button>
+          <button type="button" data-type="night">Set night</button>
         </div>
         <p id="status" role="status" aria-live="polite"></p>
         <pre id="result" hidden></pre>
