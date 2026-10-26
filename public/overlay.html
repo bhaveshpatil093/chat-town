@@ -43,6 +43,14 @@
           ? requestedLabelSize
           : defaultLabelFontSize;
       const characterCap = readIntegerParameter("characterCap", 150, 1, 1000);
+      const RAID_PARADE_TIMELINE = {
+        bannerEnterMs: 650,
+        marcherDelayMs: 450,
+        marcherStaggerMs: 85,
+        marchSpeedTilesPerSecond: 3.5,
+        disperseMs: 500,
+      };
+      const MAX_RAID_MARCHERS = 60;
       const characterIdleMinutes = readIntegerParameter(
         "idleMinutes",
         10,
@@ -239,9 +247,11 @@
           character.nameLabel.y = -(tileSize * 1.55);
           character.baseX = (character.column + 0.5) * tileWidth;
           character.baseY = (character.row + 1) * tileHeight;
-          character.sprite.x = character.baseX;
-          character.sprite.y = character.baseY;
-          character.sprite.zIndex = character.sprite.y;
+          if (character.state !== "parading") {
+            character.sprite.x = character.baseX;
+            character.sprite.y = character.baseY;
+            character.sprite.zIndex = character.sprite.y;
+          }
           if (character.bubble) {
             character.bubble.baseScale = 1;
             positionSpeechBubble(character);
@@ -619,20 +629,11 @@
         const spawnTile = chooseSpawnTile();
         if (!spawnTile) return null;
 
-        const random = createSeededRandom(hashUsername(normalizedUsername));
-        const profile = viewerProfiles.get(identity);
-        const appearance = {
+        const appearance = createAppearance(
           username,
-          skinColor: choose(skinColors, random),
-          hairColor: choose(hairColors, random),
-          hairStyle: choose(hairStyles, random),
-          outfit: choose(outfits, random),
-          level: profile?.level ?? 1,
-          xp: profile?.xp ?? 0,
-          hat: profile?.hat ?? null,
-          houseStyle: profile?.houseStyle ?? "tent",
-          nameplateColor: profile?.nameplateColor ?? "#ffffff",
-        };
+          identity,
+          normalizedUsername,
+        );
         const character = createCharacter(appearance);
         character.identity = identity;
         character.lastChatAt = Date.now();
@@ -653,6 +654,28 @@
         depthLayer.addChild(character.sprite);
         characters.set(identity, character);
         return character;
+      }
+
+      function createAppearance(
+        username,
+        identity,
+        seedKey = username.toLowerCase(),
+      ) {
+        const random = createSeededRandom(hashUsername(seedKey));
+        const profile = viewerProfiles.get(identity);
+        const appearance = {
+          username,
+          skinColor: choose(skinColors, random),
+          hairColor: choose(hairColors, random),
+          hairStyle: choose(hairStyles, random),
+          outfit: choose(outfits, random),
+          level: profile?.level ?? 1,
+          xp: profile?.xp ?? 0,
+          hat: profile?.hat ?? null,
+          houseStyle: profile?.houseStyle ?? "tent",
+          nameplateColor: profile?.nameplateColor ?? "#ffffff",
+        };
+        return appearance;
       }
 
       function applyViewerProfile(userId, profile) {
@@ -714,7 +737,7 @@
         }
       }
 
-      function chooseSpawnTile() {
+      function chooseSpawnTile(allowOccupiedFallback = true) {
         const grassTiles = [];
         const availableTiles = [];
         townMap.forEach((row, rowIndex) => {
@@ -736,7 +759,9 @@
 
         const spawnOptions = availableTiles.length
           ? availableTiles
-          : grassTiles;
+          : allowOccupiedFallback
+            ? grassTiles
+            : [];
         if (spawnOptions.length === 0) return null;
         const tile = choose(spawnOptions, Math.random);
         occupiedTiles.add(tile.key);
@@ -774,6 +799,10 @@
         nameLabel.text = appearance.username;
         nameLabel.style.fill = appearance.nameplateColor ?? "#ffffff";
         nameLabel.y = -(tileSize * 1.55);
+        nameLabel.visible = true;
+        graphics.scale.set(1);
+        graphics.rotation = 0;
+        graphics.y = 0;
         Object.assign(character, {
           appearance,
           tileSize,
@@ -1123,6 +1152,20 @@
               recycleCharacter(character);
             continue;
           }
+          if (character.state === "parading") continue;
+          if (character.state === "dispersing") {
+            character.disperseElapsed += deltaMs;
+            character.sprite.alpha = Math.min(
+              1,
+              character.disperseElapsed / RAID_PARADE_TIMELINE.disperseMs,
+            );
+            if (character.disperseElapsed >= RAID_PARADE_TIMELINE.disperseMs) {
+              character.state = "idle";
+              character.stateTimer = randomBetween(500, 1800);
+              character.nameLabel.visible = true;
+            }
+            continue;
+          }
           advanceSpeechBubble(character, deltaMs);
           updateCharacterAction(character, deltaMs);
           if (character.state !== "walking") {
@@ -1301,6 +1344,8 @@
           drawFireworks(activeEffect, progress);
           activeEffect.label.alpha =
             Math.min(1, progress * 5) * Math.min(1, (1 - progress) * 5);
+        } else if (activeEffect.type === "raid") {
+          updateRaidParade(activeEffect);
         } else {
           drawBitsRain(activeEffect, progress);
           activeEffect.label.alpha =
@@ -1316,6 +1361,168 @@
           if (event.type === "follow") startFollowEffect(event);
           else if (event.type === "sub") startSubscriptionEffect(event);
           else if (event.type === "bits") startBitsEffect(event);
+          else if (event.type === "raid") startRaidParade(event);
+        }
+      }
+
+      function startRaidParade(event) {
+        const count = Math.min(
+          Math.max(0, Math.floor(Number(event.viewerCount) || 0)),
+          MAX_RAID_MARCHERS,
+          Math.max(0, characterCap - characters.size),
+        );
+        const tileWidth = app.screen.width / townMap[0].length;
+        const tileHeight = app.screen.height / townMap.length;
+        const marchMs =
+          ((app.screen.width + tileWidth * 2) /
+            (tileWidth * RAID_PARADE_TIMELINE.marchSpeedTilesPerSecond)) *
+          1000;
+        const label = new Text({
+          text: `${event.displayName} is raiding with ${event.viewerCount} viewers!`,
+          style: {
+            fontFamily: "Arial, sans-serif",
+            fontSize: Math.max(18, Math.min(32, app.screen.width / 48)),
+            fontWeight: "bold",
+            fill: "#fff8db",
+            stroke: { fill: "#18241b", width: 4 },
+            dropShadow: { color: "#000000", alpha: 0.65, blur: 4, distance: 3 },
+          },
+          anchor: { x: 0.5, y: 0.5 },
+        });
+        const banner = new Container();
+        const background = new Graphics();
+        const paddingX = 24;
+        const paddingY = 14;
+        background
+          .roundRect(
+            0,
+            0,
+            label.width + paddingX * 2,
+            label.height + paddingY * 2,
+            14,
+          )
+          .fill({ color: "#31553b", alpha: 0.92 })
+          .stroke({ color: "#f4d36b", width: 3, alpha: 0.95 });
+        label.position.set(background.width / 2, background.height / 2);
+        banner.addChild(background, label);
+        banner.position.set(-background.width, app.screen.height * 0.16);
+        effectLayer.addChild(banner);
+
+        const raiders = [];
+        const raidId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        for (let index = 0; index < count; index += 1) {
+          const identity = `raid-${raidId}-${index}`;
+          const character = createCharacter(
+            createAppearance(
+              event.displayName,
+              identity,
+              `${event.displayName.toLowerCase()}-${raidId}-${index}`,
+            ),
+          );
+          character.identity = identity;
+          character.lastChatAt = Date.now();
+          character.row = 3;
+          character.column = 0;
+          character.tileSize = Math.min(tileWidth, tileHeight);
+          character.baseY = tileHeight * 4;
+          character.baseX = -tileWidth;
+          character.sprite.position.set(character.baseX, character.baseY);
+          character.sprite.zIndex = character.baseY;
+          character.direction = "right";
+          character.state = "parading";
+          character.nameLabel.visible = false;
+          depthLayer.addChild(character.sprite);
+          characters.set(identity, character);
+          raiders.push(character);
+        }
+
+        activeEffect = {
+          type: "raid",
+          elapsed: 0,
+          duration:
+            RAID_PARADE_TIMELINE.bannerEnterMs +
+            RAID_PARADE_TIMELINE.marcherDelayMs +
+            Math.max(0, count - 1) * RAID_PARADE_TIMELINE.marcherStaggerMs +
+            marchMs +
+            RAID_PARADE_TIMELINE.disperseMs,
+          banner,
+          bannerWidth: background.width,
+          bannerHeight: background.height,
+          marchMs,
+          raiders,
+          tileWidth,
+          tileHeight,
+        };
+      }
+
+      function updateRaidParade(parade) {
+        const enterProgress = Math.min(
+          parade.elapsed / RAID_PARADE_TIMELINE.bannerEnterMs,
+          1,
+        );
+        const easedEnter = 1 - (1 - enterProgress) ** 3;
+        const centerX = app.screen.width / 2;
+        parade.banner.x =
+          -parade.bannerWidth +
+          (centerX - parade.bannerWidth / 2 + parade.bannerWidth) * easedEnter;
+        const marcherStart =
+          RAID_PARADE_TIMELINE.bannerEnterMs +
+          RAID_PARADE_TIMELINE.marcherDelayMs;
+        const marchComplete =
+          marcherStart +
+          Math.max(0, parade.raiders.length - 1) *
+            RAID_PARADE_TIMELINE.marcherStaggerMs +
+          parade.marchMs;
+        if (parade.elapsed >= marchComplete) {
+          if (!parade.dispersed) {
+            disperseRaiders(parade);
+            parade.dispersed = true;
+          }
+          parade.banner.alpha = Math.max(
+            0,
+            1 -
+              (parade.elapsed - marchComplete) /
+                RAID_PARADE_TIMELINE.disperseMs,
+          );
+        }
+        for (let index = 0; index < parade.raiders.length; index += 1) {
+          const character = parade.raiders[index];
+          if (character.state !== "parading") continue;
+          const localElapsed =
+            parade.elapsed -
+            marcherStart -
+            index * RAID_PARADE_TIMELINE.marcherStaggerMs;
+          if (localElapsed < 0) continue;
+          const progress = Math.min(localElapsed / parade.marchMs, 1);
+          character.sprite.x =
+            -parade.tileWidth +
+            (app.screen.width + parade.tileWidth * 2) * progress;
+          character.sprite.y = character.baseY;
+          character.sprite.zIndex = character.sprite.y;
+          const frame = Math.floor(localElapsed / 150) % 2;
+          if (character.animationFrame !== frame) {
+            character.animationFrame = frame;
+            renderCharacter(character);
+          }
+        }
+      }
+
+      function disperseRaiders(parade) {
+        for (const character of parade.raiders) {
+          const tile = chooseSpawnTile(false) ?? chooseSpawnTile();
+          if (!tile) {
+            recycleCharacter(character);
+            continue;
+          }
+          character.row = tile.row;
+          character.column = tile.column;
+          character.baseX = (tile.column + 0.5) * parade.tileWidth;
+          character.baseY = (tile.row + 1) * parade.tileHeight;
+          character.sprite.position.set(character.baseX, character.baseY);
+          character.sprite.zIndex = character.baseY;
+          character.sprite.alpha = 0;
+          character.disperseElapsed = 0;
+          character.state = "dispersing";
         }
       }
 
@@ -1553,6 +1760,12 @@
       }
 
       function finishActiveEffect() {
+        if (activeEffect.type === "raid") {
+          effectLayer.removeChild(activeEffect.banner);
+          activeEffect.banner.destroy({ children: true });
+          activeEffect = null;
+          return;
+        }
         if (activeEffect.type !== "follow") {
           effectLayer.removeChild(activeEffect.graphics);
           activeEffect.graphics.destroy();
@@ -1677,7 +1890,7 @@
                 renderCharacter(character);
               }
             } else if (
-              ["follow", "sub", "bits"].includes(event.type) &&
+              ["follow", "sub", "bits", "raid"].includes(event.type) &&
               typeof event.displayName === "string"
             ) {
               queueEffect(event);
