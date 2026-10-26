@@ -11,7 +11,8 @@ import { config } from "./config.js";
 import { generateFakeEvents, parseSimulationRequest } from "./simulator.js";
 import { initializeTwitchAuth } from "./twitchAuth.js";
 import { startTwitchEventSub } from "./twitch.js";
-import { createViewerProgression } from "./progression.js";
+import { createViewerProgression, cosmeticsForLevel } from "./progression.js";
+import { loadTownObjects } from "./townObjects.js";
 import {
   configureTwitchStatus,
   getTwitchStatus,
@@ -51,6 +52,31 @@ export function createChatTownServer(
 
   app.get("/api/twitch/status", (_request, response) => {
     response.status(200).json(getTwitchStatus());
+  });
+
+  app.get("/api/town", (_request, response) => {
+    const viewers = database
+      .prepare(
+        "SELECT twitch_id, name, xp, level FROM viewers ORDER BY twitch_id",
+      )
+      .all() as Array<{
+      twitch_id: string;
+      name: string;
+      xp: number;
+      level: number;
+    }>;
+    response.status(200).json({
+      viewers: viewers.map((viewer) => ({
+        userId: viewer.twitch_id,
+        displayName: viewer.name,
+        profile: {
+          xp: viewer.xp,
+          level: viewer.level,
+          ...cosmeticsForLevel(viewer.level),
+        },
+      })),
+      townObjects: loadTownObjects(database),
+    });
   });
 
   app.post("/api/sim", (request, response) => {

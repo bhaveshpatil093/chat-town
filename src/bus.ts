@@ -12,6 +12,16 @@ export interface ViewerProfile {
   nameplateColor: string;
 }
 
+export interface FollowTownObject {
+  id: number;
+  type: "house" | "tree";
+  row: number;
+  column: number;
+  style: string | null;
+  ownerTwitchId: string | null;
+  createdAt: number;
+}
+
 interface BaseEvent<T extends string> {
   type: T;
   timestamp: number;
@@ -30,7 +40,8 @@ export interface ChatTownEventMap {
       | { command: "panic" | "restore" }
       | { command: "remove-character"; displayName: string }
     );
-  follow: BaseEvent<"follow"> & UserIdentity;
+  follow: BaseEvent<"follow"> &
+    UserIdentity & { townObject?: FollowTownObject };
   sub: BaseEvent<"sub"> & UserIdentity & { tier: string; months?: number };
   bits: BaseEvent<"bits"> & UserIdentity & { amount: number };
   raid: BaseEvent<"raid"> & UserIdentity & { viewerCount: number };

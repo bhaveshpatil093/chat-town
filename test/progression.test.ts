@@ -110,6 +110,41 @@ describe("viewer progression", () => {
     );
   });
 
+  it("persists follow decorations and upgrades owned houses with the viewer", () => {
+    const firstFollow = {
+      type: "follow" as const,
+      timestamp,
+      userId: "builder",
+      displayName: "Builder",
+    };
+    bus.emit(firstFollow);
+    expect(firstFollow.townObject).toMatchObject({ ownerTwitchId: "builder" });
+    const houseId = database
+      .prepare(
+        "INSERT INTO town_objects (type, x, y, style, owner_twitch_id) VALUES ('house', 2, 4, 'tent', 'builder')",
+      )
+      .run().lastInsertRowid;
+
+    database
+      .prepare("UPDATE viewers SET xp = 195, level = 2 WHERE twitch_id = ?")
+      .run("builder");
+    const nextFollow = {
+      type: "follow" as const,
+      timestamp: timestamp + 1,
+      userId: "builder",
+      displayName: "Builder",
+    };
+    bus.emit(nextFollow);
+
+    expect(nextFollow.profile?.houseStyle).toBe("cabin");
+    expect(
+      database
+        .prepare("SELECT style FROM town_objects WHERE id = ?")
+        .pluck()
+        .get(houseId),
+    ).toBe("cabin");
+  });
+
   it("emits one levelup event with the viewer's new persisted profile", () => {
     const levelUps = vi.fn();
     bus.on("levelup", levelUps);

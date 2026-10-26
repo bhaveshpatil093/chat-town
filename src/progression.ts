@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
 import type { ChatTownEventMap, EventBus } from "./bus.js";
+import { createFollowTownObject, type TownHouseStyle } from "./townObjects.js";
 
 export const CHAT_XP_COOLDOWN_MS = 60_000;
 export const CHAT_XP_REWARD = 5;
@@ -27,6 +28,7 @@ interface StoredViewer {
   xp: number;
   level: number;
   last_chat_xp_at: number | null;
+  house_style: TownHouseStyle | null;
 }
 
 export function xpRequiredForLevel(level: number): number {
@@ -80,7 +82,7 @@ export function createViewerProgression(
       last_seen = excluded.last_seen
   `);
   const selectViewer = database.prepare(
-    "SELECT xp, level, last_chat_xp_at FROM viewers WHERE twitch_id = ?",
+    "SELECT xp, level, last_chat_xp_at, house_style FROM viewers WHERE twitch_id = ?",
   );
   const updateViewer = database.prepare(`
     UPDATE viewers
@@ -114,17 +116,35 @@ export function createViewerProgression(
         event.userId,
       );
 
+      if (current.house_style !== cosmetics.houseStyle) {
+        database
+          .prepare(
+            "UPDATE town_objects SET style = ? WHERE owner_twitch_id = ? AND type = 'house'",
+          )
+          .run(cosmetics.houseStyle, event.userId);
+      }
+      const townObject =
+        event.type === "follow"
+          ? createFollowTownObject(database, event.userId, cosmetics.houseStyle)
+          : undefined;
+
       return {
         previousLevel: current.level,
         profile: { xp, level, ...cosmetics } satisfies ViewerCosmetics,
+        townObject,
       };
     },
   );
 
   const handle = (event: ProgressionEvent, award: number): void => {
     const timestamp = now();
-    const { previousLevel, profile } = persistEvent(event, award, timestamp);
+    const { previousLevel, profile, townObject } = persistEvent(
+      event,
+      award,
+      timestamp,
+    );
     event.profile = profile;
+    if (event.type === "follow" && townObject) event.townObject = townObject;
     if (profile.level <= previousLevel) return;
 
     bus.emit({

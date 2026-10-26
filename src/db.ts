@@ -41,6 +41,13 @@ export const DATABASE_MIGRATIONS: readonly Migration[] = [
     version: 2,
     sql: `ALTER TABLE viewers ADD COLUMN last_chat_xp_at INTEGER;`,
   },
+  {
+    version: 3,
+    sql: `
+      ALTER TABLE town_objects ADD COLUMN owner_twitch_id TEXT;
+      CREATE INDEX town_objects_owner_idx ON town_objects (owner_twitch_id);
+    `,
+  },
 ];
 
 /** Create the migration ledger and apply each unapplied migration atomically. */

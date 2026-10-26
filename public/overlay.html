@@ -133,6 +133,7 @@
       const decorations = [];
       const houses = [];
       const townAdditions = [];
+      const townObjectIds = new Set();
       const characters = new Map();
       const viewerProfiles = new Map();
       const characterPool = [];
@@ -560,7 +561,36 @@
         }
       }
 
-      drawTownMap();
+      async function loadTownState() {
+        try {
+          const response = await fetch("/api/town");
+          if (!response.ok)
+            throw new Error(`Town load failed: ${response.status}`);
+          const snapshot = await response.json();
+          for (const viewer of snapshot.viewers ?? []) {
+            if (viewer.userId && viewer.profile)
+              applyViewerProfile(viewer.userId, viewer.profile);
+          }
+          for (const object of snapshot.townObjects ?? []) {
+            if (townObjectIds.has(object.id)) continue;
+            townObjectIds.add(object.id);
+            townAdditions.push({
+              kind: object.type,
+              row: object.row,
+              column: object.column,
+              ownerUserId: object.ownerTwitchId,
+              houseStyle:
+                object.type === "house" ? (object.style ?? "tent") : null,
+              objectId: object.id,
+              sprite: null,
+            });
+          }
+        } catch (error) {
+          console.error("[Chat Town overlay] unable to load town", error);
+        }
+        drawTownMap();
+      }
+      void loadTownState();
       window.addEventListener("resize", drawTownMap);
 
       const skinColors = ["#f2c49b", "#d99a6c", "#b97850", "#80513f"];
@@ -715,6 +745,13 @@
 
       function isHouseFootprint(row, column) {
         return (
+          townAdditions.some((addition) => {
+            const radius = addition.kind === "house" ? 1 : 0;
+            return (
+              addition.row === row &&
+              Math.abs(addition.column - column) <= radius
+            );
+          }) ||
           townMap[row]?.[column] === "H" ||
           townMap.some((mapRow, houseRow) => {
             if (houseRow !== row) return false;
@@ -1283,20 +1320,21 @@
       }
 
       function startFollowEffect(event) {
-        let kind = Math.random() < 0.5 ? "tree" : "house";
-        let spot = chooseDecorationSpot(kind);
-        if (!spot) {
-          kind = kind === "tree" ? "house" : "tree";
-          spot = chooseDecorationSpot(kind);
-        }
-        if (!spot) return;
+        const object = event.townObject;
+        if (!object || townObjectIds.has(object.id)) return;
+        townObjectIds.add(object.id);
+        const kind = object.type;
+        const spot = { row: object.row, column: object.column };
         const addition = {
           kind,
           row: spot.row,
           column: spot.column,
-          ownerUserId: event.userId,
+          ownerUserId: object.ownerTwitchId ?? event.userId,
           houseStyle:
-            kind === "house" ? (event.profile?.houseStyle ?? "tent") : null,
+            kind === "house"
+              ? (object.style ?? event.profile?.houseStyle ?? "tent")
+              : null,
+          objectId: object.id,
           sprite: null,
         };
         townAdditions.push(addition);
@@ -1309,8 +1347,8 @@
                 spot.column,
                 tileWidth,
                 tileHeight,
-                event.profile?.houseStyle ?? "tent",
-                event.userId,
+                addition.houseStyle,
+                addition.ownerUserId,
               )
             : addTree(spot.row, spot.column, tileWidth, tileHeight);
         addition.sprite.scale.set(0.55);

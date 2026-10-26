@@ -41,6 +41,42 @@ describe("Chat Town server", () => {
     });
   });
 
+  it("serves saved viewer profiles and town objects for the overlay", async () => {
+    chatTownServer = createTestServer();
+    chatTownServer.database
+      .prepare(
+        "INSERT INTO viewers (twitch_id, name, xp, level, house_style) VALUES ('viewer-1', 'Regular', 200, 3, 'cabin')",
+      )
+      .run();
+    chatTownServer.database
+      .prepare(
+        "INSERT INTO town_objects (type, x, y, style, owner_twitch_id) VALUES ('house', 4, 6, 'cabin', 'viewer-1')",
+      )
+      .run();
+    await listen(chatTownServer);
+
+    const response = await fetch(`${serverUrl(chatTownServer)}api/town`);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      viewers: [
+        {
+          userId: "viewer-1",
+          displayName: "Regular",
+          profile: { xp: 200, level: 3, houseStyle: "cabin" },
+        },
+      ],
+      townObjects: [
+        {
+          type: "house",
+          row: 6,
+          column: 4,
+          style: "cabin",
+          ownerTwitchId: "viewer-1",
+        },
+      ],
+    });
+  });
+
   it("broadcasts every normalized event to connected clients as JSON", async () => {
     const bus = new EventBus();
     chatTownServer = createTestServer(bus);
