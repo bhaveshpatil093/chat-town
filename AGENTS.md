@@ -9,7 +9,9 @@ Chat Town is a Node.js application written in TypeScript. The planned applicatio
 - PixiJS loaded from a CDN in the browser client; do not bundle PixiJS as an npm dependency.
 - Twurple for Twitch API and chat integrations.
 - `better-sqlite3` for local SQLite persistence.
-- `tsx` for running TypeScript directly during development and in the test runner.
+- `tsx` for running TypeScript directly during development and simulation.
+- Vitest for the unit test suite.
+- Vite 7 as Vitest's runtime dependency.
 - ESLint and Prettier for linting and formatting.
 
 The repository currently contains the TypeScript scaffold and development tooling. Add application modules within the structure below as the features are implemented.
@@ -17,9 +19,10 @@ The repository currently contains the TypeScript scaffold and development toolin
 ## Folder structure
 
 - `src/` — application TypeScript source and runtime entry points.
-- `test/` — automated tests, using Node's test runner through `tsx`.
+- `test/` — automated tests, using Vitest.
 - `dist/` — compiled JavaScript output from the build; generated and ignored by Git.
 - `package.json` and `package-lock.json` — scripts and dependency manifest/lockfile.
+- `.npmrc` — npm's peer-dependency setting for reproducible installs with the current npm resolver.
 - `tsconfig.json` — TypeScript compiler settings.
 - `eslint.config.js` — ESLint configuration.
 - `.prettierrc.json` — Prettier formatting preferences.
@@ -32,7 +35,7 @@ Keep future server, browser-client, and persistence code organized under `src/` 
 - `npm run dev` — run the app with `tsx` watch mode.
 - `npm run build` — compile `src/` into `dist/`.
 - `npm start` — run the compiled app.
-- `npm test` — run the Node.js test suite through `tsx`.
+- `npm test` — run the Vitest unit test suite.
 - `npm run sim` — run the simulation entry point.
 - `npm run lint` — lint the project with ESLint.
 - `npm run format` — format files with Prettier.
