@@ -57,6 +57,9 @@
       };
       const townGraphics = new Graphics();
       const characters = new Map();
+      const occupiedTiles = new Set();
+      const reservedTiles = new Set();
+      const walkDirections = ["up", "down", "left", "right"];
       app.stage.addChild(townGraphics);
 
       function drawTownMap() {
@@ -107,11 +110,22 @@
         });
 
         for (const character of characters.values()) {
-          character.sprite.x = (character.column + 0.5) * tileWidth;
-          character.sprite.y = (character.row + 1) * tileHeight;
-          character.sprite.scale.set(
-            Math.min(tileWidth, tileHeight) / character.tileSize,
-          );
+          if (character.state === "walking") {
+            reservedTiles.delete(character.target.key);
+            character.target = null;
+            character.state = "pause";
+            character.stateTimer = 1000;
+            character.animationFrame = 0;
+            renderCharacter(character);
+          }
+
+          const tileSize = Math.min(tileWidth, tileHeight);
+          character.sprite.scale.set(tileSize / character.tileSize);
+          character.tileSize = tileSize;
+          character.baseX = (character.column + 0.5) * tileWidth;
+          character.baseY = (character.row + 1) * tileHeight;
+          character.sprite.x = character.baseX;
+          character.sprite.y = character.baseY;
         }
       }
 
@@ -134,7 +148,6 @@
         { shirt: "#9a68a8", pants: "#54404b" },
         { shirt: "#e58c52", pants: "#426a72" },
       ];
-      const occupiedTiles = new Set();
 
       function spawnCharacter(username, userId = username) {
         const normalizedUsername = username.trim().toLowerCase();
@@ -151,16 +164,22 @@
           hairStyle: choose(hairStyles, random),
           outfit: choose(outfits, random),
         };
-        const sprite = drawCharacter(appearance);
+        const character = createCharacter(appearance);
         const tileSize = Math.min(
           app.screen.width / townMap[0].length,
           app.screen.height / townMap.length,
         );
-        sprite.x =
+        character.row = spawnTile.row;
+        character.column = spawnTile.column;
+        character.tileSize = tileSize;
+        character.baseX =
           (spawnTile.column + 0.5) * (app.screen.width / townMap[0].length);
-        sprite.y = (spawnTile.row + 1) * (app.screen.height / townMap.length);
-        app.stage.addChild(sprite);
-        characters.set(identity, { ...spawnTile, sprite, tileSize });
+        character.baseY =
+          (spawnTile.row + 1) * (app.screen.height / townMap.length);
+        character.sprite.x = character.baseX;
+        character.sprite.y = character.baseY;
+        app.stage.addChild(character.sprite);
+        characters.set(identity, character);
       }
 
       function chooseSpawnTile() {
@@ -172,7 +191,9 @@
             if (tile === "g") {
               const spot = { row: rowIndex, column: columnIndex, key };
               grassTiles.push(spot);
-              if (!occupiedTiles.has(key)) availableTiles.push(spot);
+              if (!occupiedTiles.has(key) && !reservedTiles.has(key)) {
+                availableTiles.push(spot);
+              }
             }
           });
         });
@@ -186,14 +207,43 @@
         return tile;
       }
 
-      function drawCharacter({ skinColor, hairColor, hairStyle, outfit }) {
+      function createCharacter(appearance) {
         const graphics = new Graphics();
         const sprite = new Container();
         const tileSize = Math.min(
           app.screen.width / townMap[0].length,
           app.screen.height / townMap.length,
         );
-        const pixel = tileSize / 8;
+        sprite.addChild(graphics);
+        const character = {
+          sprite,
+          graphics,
+          appearance,
+          tileSize,
+          row: 0,
+          column: 0,
+          baseX: 0,
+          baseY: 0,
+          state: "idle",
+          stateTimer: randomBetween(500, 1800),
+          direction: choose(walkDirections, Math.random),
+          animationFrame: 0,
+          animationTimer: 0,
+          bobTime: Math.random() * Math.PI * 2,
+          target: null,
+        };
+        renderCharacter(character);
+        return character;
+      }
+
+      function renderCharacter(character) {
+        const { graphics, appearance, direction } = character;
+        const { skinColor, hairColor, hairStyle, outfit } = appearance;
+        const pixel = character.tileSize / 8;
+        const walking = character.state === "walking";
+        const frame = walking ? character.animationFrame : 0;
+        const sideFacing = direction === "left" || direction === "right";
+        const stride = walking && frame === 0 ? 1 : walking ? -1 : 0;
         const pixelRect = (x, y, width, height, color) => {
           graphics
             .rect(
@@ -205,6 +255,7 @@
             .fill(color);
         };
 
+        graphics.clear();
         if (hairStyle === "long" || hairStyle === "bob") {
           pixelRect(1, 1, 6, 6, hairColor);
         }
@@ -226,18 +277,133 @@
           }
         }
 
-        pixelRect(3, 3, 1, 1, "#302a32");
-        pixelRect(5, 3, 1, 1, "#302a32");
-        pixelRect(1, 5, 6, 4, outfit.shirt);
-        pixelRect(0, 5, 1, 3, skinColor);
-        pixelRect(7, 5, 1, 3, skinColor);
-        pixelRect(2, 9, 4, 2, outfit.pants);
-        pixelRect(1, 11, 2, 1, "#40333a");
-        pixelRect(5, 11, 2, 1, "#40333a");
+        if (direction === "down") {
+          pixelRect(3, 3, 1, 1, "#302a32");
+          pixelRect(5, 3, 1, 1, "#302a32");
+        } else if (direction === "left") {
+          pixelRect(2, 3, 1, 1, "#302a32");
+        } else if (direction === "right") {
+          pixelRect(5, 3, 1, 1, "#302a32");
+        }
 
-        sprite.addChild(graphics);
-        return sprite;
+        if (sideFacing) {
+          pixelRect(2, 5, 4, 4, outfit.shirt);
+          pixelRect(direction === "left" ? 1 : 6, 5 + stride, 1, 3, skinColor);
+          pixelRect(3 + stride, 9, 2, 2, outfit.pants);
+          pixelRect(2 + stride, 11, 2, 1, "#40333a");
+        } else {
+          pixelRect(1, 5, 6, 4, outfit.shirt);
+          pixelRect(0, 5 + stride, 1, 3, skinColor);
+          pixelRect(7, 5 - stride, 1, 3, skinColor);
+          pixelRect(2 + stride, 9, 1, 2, outfit.pants);
+          pixelRect(5 - stride, 9, 1, 2, outfit.pants);
+          pixelRect(1 + stride, 11, 2, 1, "#40333a");
+          pixelRect(5 - stride, 11, 2, 1, "#40333a");
+        }
       }
+
+      function findWanderTarget(character) {
+        const steps = {
+          up: { row: -1, column: 0 },
+          down: { row: 1, column: 0 },
+          left: { row: 0, column: -1 },
+          right: { row: 0, column: 1 },
+        };
+        const targets = [];
+
+        for (const direction of walkDirections) {
+          const step = steps[direction];
+          for (let distance = 1; distance <= 3; distance += 1) {
+            const row = character.row + step.row * distance;
+            const column = character.column + step.column * distance;
+            if (row < 0 || row >= townMap.length) break;
+
+            const tile = townMap[row][column];
+            if (!tile || tile === "T") break;
+
+            const key = `${row}:${column}`;
+            if (occupiedTiles.has(key) || reservedTiles.has(key)) break;
+            targets.push({ row, column, key, direction });
+          }
+        }
+
+        return targets.length ? choose(targets, Math.random) : null;
+      }
+
+      function startWandering(character) {
+        const target = findWanderTarget(character);
+        if (!target) {
+          character.state = "idle";
+          character.stateTimer = randomBetween(700, 1800);
+          return;
+        }
+
+        character.state = "walking";
+        character.target = target;
+        character.direction = target.direction;
+        character.animationFrame = 0;
+        character.animationTimer = 0;
+        character.sprite.y = character.baseY;
+        reservedTiles.add(target.key);
+        renderCharacter(character);
+      }
+
+      function updateCharacters(elapsedMs) {
+        const deltaMs = Math.min(elapsedMs, 50);
+
+        for (const character of characters.values()) {
+          if (character.state !== "walking") {
+            character.bobTime += deltaMs;
+            character.sprite.y =
+              character.baseY + Math.sin(character.bobTime / 240) * 2;
+            character.stateTimer -= deltaMs;
+            if (character.stateTimer <= 0) startWandering(character);
+            continue;
+          }
+
+          character.animationTimer += deltaMs;
+          if (character.animationTimer >= 150) {
+            character.animationTimer %= 150;
+            character.animationFrame = 1 - character.animationFrame;
+            renderCharacter(character);
+          }
+
+          const tileWidth = app.screen.width / townMap[0].length;
+          const tileHeight = app.screen.height / townMap.length;
+          const targetX = (character.target.column + 0.5) * tileWidth;
+          const targetY = (character.target.row + 1) * tileHeight;
+          const distanceX = targetX - character.sprite.x;
+          const distanceY = targetY - character.sprite.y;
+          const distance = Math.hypot(distanceX, distanceY);
+          const travel = (character.tileSize * 1.5 * deltaMs) / 1000;
+
+          if (distance <= travel) {
+            occupiedTiles.delete(`${character.row}:${character.column}`);
+            reservedTiles.delete(character.target.key);
+            occupiedTiles.add(character.target.key);
+            character.row = character.target.row;
+            character.column = character.target.column;
+            character.target = null;
+            character.baseX = targetX;
+            character.baseY = targetY;
+            character.sprite.x = targetX;
+            character.sprite.y = targetY;
+            character.state = "pause";
+            character.stateTimer = randomBetween(900, 2600);
+            character.animationFrame = 0;
+            renderCharacter(character);
+          } else if (distance > 0) {
+            character.sprite.x += (distanceX / distance) * travel;
+            character.sprite.y += (distanceY / distance) * travel;
+          }
+        }
+      }
+
+      function randomBetween(min, max) {
+        return min + Math.random() * (max - min);
+      }
+
+      app.ticker.add((ticker) => updateCharacters(ticker.elapsedMS));
 
       function hashUsername(username) {
         let hash = 2_166_136_261;
